@@ -16,6 +16,7 @@
   </header>
 
   <main>
+    <p class="zone-eyebrow" data-i18n="zonePlan">PLAN &amp; SETTINGS</p>
     <section class="card" id="plan-picker">
       <h2 data-i18n="planCardTitle">Plan</h2>
 
@@ -84,6 +85,7 @@
       <button id="calculate-btn" type="button" data-i18n="calculateBtn">Calculate</button>
     </section>
 
+    <p class="zone-eyebrow" data-i18n="zoneResults">RESULTS</p>
     <section class="card" id="summary" hidden>
       <h2 data-i18n="summaryCardTitle">Summary</h2>
       <div class="summary-grid">
@@ -123,7 +125,7 @@
       <ul id="chart-caption" class="chart-caption"></ul>
     </section>
 
-    <details class="card" id="results" hidden open>
+    <details class="card" id="results" hidden>
       <summary data-i18n="resultsCardTitle">Results</summary>
       <div class="table-scroll">
         <table id="results-table">
@@ -171,6 +173,7 @@
       <button id="add-to-comparison-btn" type="button" class="secondary-btn" data-i18n="addToComparisonBtn">Add to Comparison</button>
     </section>
 
+    <p class="zone-eyebrow" data-i18n="zoneCompare">COMPARE PLANS</p>
     <section class="card" id="comparison-card" hidden>
       <h2 data-i18n="comparisonCardTitle">Compare Plans</h2>
       <p class="field-group-label" data-i18n="comparisonHint">Calculate a plan, then "Add to Comparison" — up to 3 at a time.</p>
@@ -214,8 +217,10 @@
           <tbody></tbody>
         </table>
       </div>
+      <button id="export-comparison-pdf-btn" type="button" data-i18n="exportComparisonPdfBtn">Export Comparison PDF</button>
     </section>
 
+    <p class="zone-eyebrow" data-i18n="zoneClient">CLIENT &amp; ADVISOR</p>
     <section class="card" id="client-advisor-card">
       <h2 data-i18n="clientAdvisorCardTitle">Client &amp; Advisor Info</h2>
 

@@ -142,3 +142,118 @@ function escapeHtml(str) {
   div.textContent = str;
   return div.innerHTML;
 }
+
+// Client-facing side-by-side comparison PDF — same CJK-safe html2canvas
+// header technique as exportPDF(), plus the comparison chart and a wide
+// table with one column-group per slot (rather than per-year, since the
+// whole point of this export is comparing plans against each other, not
+// showing one plan's own breakdown).
+async function exportComparisonPDF() {
+  if (!state.comparisonSlots || state.comparisonSlots.length === 0 || !comparisonChartInstance) return;
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "landscape" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 32;
+  let y = margin;
+
+  const clientName = document.getElementById("client-name").value.trim();
+  let advisor = {};
+  try {
+    advisor = JSON.parse(localStorage.getItem(ADVISOR_STORAGE_KEY)) || {};
+  } catch (e) {
+    // ignore corrupt/missing localStorage data
+  }
+  const dateStr = new Date().toLocaleDateString();
+  const advisorParts = [advisor.name, advisor.phone, advisor.email].filter(Boolean);
+  const compYears = readComparisonYears();
+
+  const rowsHtml = state.comparisonSlots
+    .map((slot) => {
+      const yearCells = compYears
+        .map((target) => {
+          const y2 = nearestYearAtOrBelow(slot.availableYears, target);
+          const r = slot.resultsByYear[y2];
+          const approx = y2 !== target ? "~" : "";
+          return `<td style="padding:5px 8px;border-bottom:1px solid #e2e5ea;text-align:right;">${approx}${escapeHtml(formatMoney(r.totalSV))}</td>
+                  <td style="padding:5px 8px;border-bottom:1px solid #e2e5ea;text-align:right;">${approx}${escapeHtml(formatPercent(r.irrPercent))}</td>`;
+        })
+        .join("");
+      return `<tr>
+        <td style="padding:5px 8px;border-bottom:1px solid #e2e5ea;">${escapeHtml(slot.company)} — ${escapeHtml(slot.planName)}${slot.hasPF ? " (PF)" : ""}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e2e5ea;">${slot.span === 1 ? escapeHtml(t("yearSingular")) : escapeHtml(t("yearsPlural", slot.span))}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e2e5ea;text-align:right;">${escapeHtml(formatMoney(slot.netPremium))}</td>
+        ${yearCells}
+        <td style="padding:5px 8px;border-bottom:1px solid #e2e5ea;">${slot.breakEvenYear !== null ? escapeHtml(t("yearLabel", slot.breakEvenYear)) : escapeHtml(t("comparisonNoBreakeven"))}</td>
+      </tr>`;
+    })
+    .join("");
+
+  const yearHeaderCells = compYears
+    .map((yr) => `<th colspan="2" style="text-align:center;padding:5px 8px;border-bottom:2px solid #1a1d23;">${escapeHtml(t("yearLabel", yr))}</th>`)
+    .join("");
+  const subHeaderCells = compYears
+    .map(
+      () =>
+        `<th style="text-align:right;padding:0 8px 4px;font-weight:400;color:#6b7280;">${escapeHtml(t("colTotalSV"))}</th>
+         <th style="text-align:right;padding:0 8px 4px;font-weight:400;color:#6b7280;">${escapeHtml(t("colIRR"))}</th>`
+    )
+    .join("");
+
+  const disclaimers = [...new Set(state.comparisonSlots.map((s) => PLANS[s.planId].disclaimer).filter(Boolean))];
+
+  const container = document.createElement("div");
+  container.style.cssText =
+    "position:absolute;left:-9999px;top:0;width:1120px;padding:24px;background:#ffffff;" +
+    "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang HK','Microsoft YaHei',sans-serif;color:#1a1d23;";
+  container.innerHTML = `
+    <h1 style="font-size:22px;margin:0 0 12px;">${escapeHtml(t("comparisonCardTitle"))}</h1>
+    <div style="font-size:13px;line-height:1.6;">
+      <div>${escapeHtml(t("pdfDate"))}: ${escapeHtml(dateStr)}</div>
+      ${clientName ? `<div>${escapeHtml(t("pdfClient"))}: ${escapeHtml(clientName)}</div>` : ""}
+      ${advisorParts.length ? `<div>${escapeHtml(t("pdfAdvisor"))}: ${escapeHtml(advisorParts.join(" / "))}</div>` : ""}
+    </div>
+    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:12px;">
+      <thead>
+        <tr>
+          <th rowspan="2" style="text-align:left;padding:5px 8px;border-bottom:2px solid #1a1d23;vertical-align:bottom;">${escapeHtml(t("colPlan"))}</th>
+          <th rowspan="2" style="text-align:left;padding:5px 8px;border-bottom:2px solid #1a1d23;vertical-align:bottom;">${escapeHtml(t("spanLabel"))}</th>
+          <th rowspan="2" style="text-align:right;padding:5px 8px;border-bottom:2px solid #1a1d23;vertical-align:bottom;">${escapeHtml(t("colNetPremium"))}</th>
+          ${yearHeaderCells}
+          <th rowspan="2" style="text-align:left;padding:5px 8px;border-bottom:2px solid #1a1d23;vertical-align:bottom;">${escapeHtml(t("colBreakeven"))}</th>
+        </tr>
+        <tr>${subHeaderCells}</tr>
+      </thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    ${
+      disclaimers.length
+        ? `<div style="font-size:8px;color:#6b7280;margin-top:16px;">
+             <strong>${escapeHtml(t("pdfDisclaimerTitle"))}:</strong> ${disclaimers.map(escapeHtml).join(" ")}
+           </div>`
+        : ""
+    }
+  `;
+  document.body.appendChild(container);
+
+  let headerHeight;
+  try {
+    const headerCanvas = await html2canvas(container, { scale: 2, backgroundColor: "#ffffff" });
+    const headerImgData = headerCanvas.toDataURL("image/jpeg", 0.92);
+    const headerWidth = pageWidth - margin * 2;
+    headerHeight = headerWidth * (headerCanvas.height / headerCanvas.width);
+    doc.addImage(headerImgData, "JPEG", margin, y, headerWidth, headerHeight);
+  } finally {
+    document.body.removeChild(container);
+  }
+  y += headerHeight + 16;
+
+  comparisonChartInstance.resize();
+  const imgData = comparisonChartInstance.toBase64Image("image/jpeg", 0.92);
+  const imgWidth = pageWidth - margin * 2;
+  const imgHeight = imgWidth * (comparisonChartInstance.height / comparisonChartInstance.width);
+  doc.addImage(imgData, "JPEG", margin, y, imgWidth, imgHeight);
+
+  const filenameBase = (clientName || "comparison").replace(/[^a-zA-Z0-9一-鿿]+/g, "_");
+  doc.save(`${filenameBase}_comparison_${dateStr.replace(/\//g, "-")}.pdf`);
+}

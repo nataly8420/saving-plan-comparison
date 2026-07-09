@@ -7,6 +7,11 @@ const I18N = {
   en: {
     appTitle: "Savings Plan Comparison",
 
+    zonePlan: "Plan & Settings",
+    zoneResults: "Results",
+    zoneCompare: "Compare Plans",
+    zoneClient: "Client & Advisor",
+
     planCardTitle: "Plan",
     companyLabel: "Company",
     planLabel: "Plan",
@@ -82,6 +87,7 @@ const I18N = {
     colBreakeven: "Breakeven Year",
     comparisonRemoveBtn: "Remove",
     comparisonNoBreakeven: "Never",
+    exportComparisonPdfBtn: "Export Comparison PDF",
 
     stressCardTitle: "Stress Test",
     colStressBase: "Net Return (base rate)",
@@ -109,6 +115,11 @@ const I18N = {
 
   zh: {
     appTitle: "儲蓄計劃比較",
+
+    zonePlan: "計劃及設定",
+    zoneResults: "計算結果",
+    zoneCompare: "計劃比較",
+    zoneClient: "客戶及顧問",
 
     planCardTitle: "計劃",
     companyLabel: "公司",
@@ -185,6 +196,7 @@ const I18N = {
     colBreakeven: "回本年度",
     comparisonRemoveBtn: "移除",
     comparisonNoBreakeven: "永不回本",
+    exportComparisonPdfBtn: "匯出比較PDF",
 
     stressCardTitle: "壓力測試",
     colStressBase: "淨回報（基準利率）",

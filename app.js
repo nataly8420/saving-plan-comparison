@@ -1011,6 +1011,7 @@ function init() {
   document.getElementById("calculate-btn").addEventListener("click", calculate);
   document.getElementById("export-pdf-btn").addEventListener("click", exportPDF);
   document.getElementById("add-to-comparison-btn").addEventListener("click", addToComparison);
+  document.getElementById("export-comparison-pdf-btn").addEventListener("click", exportComparisonPDF);
 
   ["comparison-year-1", "comparison-year-2", "comparison-year-3"].forEach((id) => {
     document.getElementById(id).addEventListener("change", () => {

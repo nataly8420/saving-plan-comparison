@@ -735,7 +735,26 @@ function runTests() {
     }
   }
   if (fwd1.day1SVRatio !== 0.6) { fwdOk = false; console.error(`FWD 1yr day1SVRatio: expected 0.6, got ${fwd1.day1SVRatio}`); }
+  if (fwd1.pf !== null || fwd2.pf !== null || fwd3.pf !== null || fwd5.pf !== null) {
+    fwdOk = false;
+    console.error("FWD 盈聚‧天下 II: expected pf:null on all spans (confirmed non-PF), found a non-null pf config");
+  }
   console.log(fwdOk ? "PASS: FWD 盈聚‧天下 II 1/2/3/5-year spans match proposals exactly" : "FAIL: FWD mismatch");
+
+  // 18. FWD 智盈匯聚（優越版）III (1yr, PF-enabled) must match its proposal.
+  const zhiying1 = resolvePlanForSpan(PLANS["fwd_zhiying3"], 1);
+  const expectedZhiying1 = { 1: 800000, 10: 1553432, 30: 3868551, 87: 65687661 };
+  const resultsZhiying1 = Object.fromEntries(calculatePlan(zhiying1, 1000000, 1).map((r) => [r.year, r]));
+  let zhiyingOk = true;
+  for (const [year, expectedTotal] of Object.entries(expectedZhiying1)) {
+    if (Math.abs(resultsZhiying1[year].totalSV - expectedTotal) > 0.5) {
+      zhiyingOk = false;
+      console.error(`FWD 智盈匯聚 III year ${year}: expected ${expectedTotal}, got ${resultsZhiying1[year].totalSV}`);
+    }
+  }
+  if (zhiying1.day1SVRatio !== 0.8) { zhiyingOk = false; console.error(`FWD 智盈匯聚 III day1SVRatio: expected 0.8, got ${zhiying1.day1SVRatio}`); }
+  if (!zhiying1.pf) { zhiyingOk = false; console.error("FWD 智盈匯聚 III: expected pf to be enabled"); }
+  console.log(zhiyingOk ? "PASS: FWD 智盈匯聚（優越版）III matches proposal exactly" : "FAIL: FWD 智盈匯聚 III mismatch");
 
   console.log("1M results:", results1M);
   console.log("1M PF (pledge) results:", pfResults);

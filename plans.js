@@ -815,23 +815,10 @@ const PLANS = {
 
         // day1SVRatio = 0.6 IS real — the proposal states "保單繕發日之退保
         //價值：600,000" explicitly, matching returnTable[1].guaranteedCVRatio
-        // exactly. No loan/LTV table in this proposal (same as every other
-        // insurer so far) — ltvRatio/defaultLoanRate below are PLACEHOLDER
-        // defaults, meant to be hand-adjusted per case (see #pf-ltv/#pf-rate).
+        // exactly. Confirmed by user: 盈聚‧天下 II is non-PF (the separate
+        // 智盈匯聚（優越版）III product below is the PF-enabled one).
         day1SVRatio: 0.6,
-        pf: {
-          enabled: true,
-          defaultLoanRate: 0.025,
-          processingFeeRate: 0.000,
-          processingFeeFixed: 0,
-          modes: {
-            general: {
-              label: "保單貸款 (Policy Loan)",
-              ltvRatio: 0.70,
-              loanBasis: "day1SV",
-            },
-          },
-        },
+        pf: null,
 
         maxYearsToShow: 87,
         defaultCompareYears: [10, 15, 20],
@@ -875,22 +862,9 @@ const PLANS = {
         },
 
         // day1SVRatio here = returnTable[1].guaranteedCVRatio (real, not a
-        // guess) — non-zero and usable as a day1SV loan basis, unlike the
-        // 3/5-year spans below where year 1's CV is $0.
+        // guess). Non-PF product — see span 1's comment.
         day1SVRatio: 0.25,
-        pf: {
-          enabled: true,
-          defaultLoanRate: 0.025,
-          processingFeeRate: 0.000,
-          processingFeeFixed: 0,
-          modes: {
-            general: {
-              label: "保單貸款 (Policy Loan)",
-              ltvRatio: 0.70,
-              loanBasis: "day1SV",
-            },
-          },
-        },
+        pf: null,
 
         maxYearsToShow: 87,
         defaultCompareYears: [10, 15, 20],
@@ -931,24 +905,9 @@ const PLANS = {
           3: { 1: 0, 2: 0, 3: 0 },
         },
 
-        // Year 1 (and 2) CV is $0 for this span, so a day1SV-based loan
-        // would trivially be $0 — netPremium is the only basis that's
-        // actually usable here, hence the different loanBasis vs spans
-        // 1/2 above. Still a placeholder LTV%, not sourced.
+        // Non-PF product — see span 1's comment.
         day1SVRatio: 0,
-        pf: {
-          enabled: true,
-          defaultLoanRate: 0.025,
-          processingFeeRate: 0.000,
-          processingFeeFixed: 0,
-          modes: {
-            general: {
-              label: "保單貸款 (Policy Loan)",
-              ltvRatio: 0.70,
-              loanBasis: "netPremium",
-            },
-          },
-        },
+        pf: null,
 
         maxYearsToShow: 87,
         defaultCompareYears: [10, 15, 20],
@@ -989,8 +948,70 @@ const PLANS = {
           5: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
         },
 
-        // Same reasoning as span 3 — year 1 CV is $0, netPremium basis used.
+        // Non-PF product — see span 1's comment.
         day1SVRatio: 0,
+        pf: null,
+
+        maxYearsToShow: 87,
+        defaultCompareYears: [10, 15, 20],
+      },
+    },
+  },
+
+  // 智盈匯聚（優越版）III壽險計劃 — confirmed by user as the actual PF-only
+  // product from the original spec (separate from 盈聚‧天下 II above, which
+  // is non-PF). Data source: male, age 51, non-smoker, $1,000,000 single
+  // premium ("fwd zhiying 1yr 1M.pdf"). Only 1yr (躉繳) provided so far.
+  "fwd_zhiying3": {
+    id: "fwd_zhiying3",
+    name: "智盈匯聚（優越版）III壽險計劃",
+    company: "FWD 富衛",
+    hasRealData: true,
+    currency: "USD",
+    availableSpans: [1],
+
+    disclaimer: "此文件僅概括說明閣下保單的預計退保價值及身故權益，旨在顯示任何非保證金額的比重，並闡述在指定情景下非保證金額的變動的影響，而絕不影響保單文件內所訂明的條款及細則。",
+
+    spans: {
+      1: {
+        returnTable: {
+            1: { guaranteedCVRatio: 0.80000000, accumulatedDivRatio: 0.00000000, terminalDivRatio: 0.00000000 },
+            2: { guaranteedCVRatio: 0.80000000, accumulatedDivRatio: 0.00000000, terminalDivRatio: 0.00000000 },
+            3: { guaranteedCVRatio: 0.86500000, accumulatedDivRatio: 0.00050000, terminalDivRatio: 0.09600000 },
+            4: { guaranteedCVRatio: 0.92100000, accumulatedDivRatio: 0.00121800, terminalDivRatio: 0.10900000 },
+            5: { guaranteedCVRatio: 0.98000000, accumulatedDivRatio: 0.00216400, terminalDivRatio: 0.13400000 },
+           10: { guaranteedCVRatio: 1.06700000, accumulatedDivRatio: 0.00943200, terminalDivRatio: 0.47700000 },
+           15: { guaranteedCVRatio: 1.12100000, accumulatedDivRatio: 0.02100700, terminalDivRatio: 0.80200000 },
+           20: { guaranteedCVRatio: 1.19100000, accumulatedDivRatio: 0.03665500, terminalDivRatio: 1.21100000 },
+           25: { guaranteedCVRatio: 1.27900000, accumulatedDivRatio: 0.05835900, terminalDivRatio: 1.73000000 },
+           30: { guaranteedCVRatio: 1.38900000, accumulatedDivRatio: 0.08755100, terminalDivRatio: 2.39200000 },
+           35: { guaranteedCVRatio: 1.46900000, accumulatedDivRatio: 0.13016100, terminalDivRatio: 3.29200000 },
+           40: { guaranteedCVRatio: 1.55500000, accumulatedDivRatio: 0.18804000, terminalDivRatio: 4.45800000 },
+           45: { guaranteedCVRatio: 1.64600000, accumulatedDivRatio: 0.26674400, terminalDivRatio: 5.96900000 },
+           50: { guaranteedCVRatio: 1.74300000, accumulatedDivRatio: 0.37454400, terminalDivRatio: 7.92800000 },
+           55: { guaranteedCVRatio: 1.84700000, accumulatedDivRatio: 0.52244700, terminalDivRatio: 10.46900000 },
+           60: { guaranteedCVRatio: 1.95800000, accumulatedDivRatio: 0.72004100, terminalDivRatio: 13.77300000 },
+           65: { guaranteedCVRatio: 2.07700000, accumulatedDivRatio: 0.97535300, terminalDivRatio: 18.08300000 },
+           70: { guaranteedCVRatio: 2.20300000, accumulatedDivRatio: 1.29993700, terminalDivRatio: 23.72300000 },
+           75: { guaranteedCVRatio: 2.33800000, accumulatedDivRatio: 1.70780100, terminalDivRatio: 31.11800000 },
+           80: { guaranteedCVRatio: 2.48300000, accumulatedDivRatio: 2.21587800, terminalDivRatio: 40.83900000 },
+           85: { guaranteedCVRatio: 2.63800000, accumulatedDivRatio: 2.84430700, terminalDivRatio: 53.64600000 },
+           87: { guaranteedCVRatio: 2.70300000, accumulatedDivRatio: 3.13466100, terminalDivRatio: 59.85000000 },
+        },
+
+        terminalDivRealizationRate: 1.0,
+
+        // No discount/promo shown in this proposal.
+        discountTable: {
+          1: { 1: 0 },
+        },
+
+        // day1SVRatio = 0.8 IS real — proposal states "保單繕發日之退保價值：
+        // 800,000" explicitly, matching returnTable[1].guaranteedCVRatio.
+        // No loan/LTV table in this proposal (same as every other insurer) —
+        // ltvRatio/defaultLoanRate below are PLACEHOLDER defaults, meant to
+        // be hand-adjusted per case (see #pf-ltv/#pf-rate).
+        day1SVRatio: 0.8,
         pf: {
           enabled: true,
           defaultLoanRate: 0.025,
@@ -1000,7 +1021,7 @@ const PLANS = {
             general: {
               label: "保單貸款 (Policy Loan)",
               ltvRatio: 0.70,
-              loanBasis: "netPremium",
+              loanBasis: "day1SV",
             },
           },
         },
