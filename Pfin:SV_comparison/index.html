@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Savings Plan Comparison</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1 data-i18n="appTitle">Savings Plan Comparison</h1>
+    <div class="lang-switch">
+      <button type="button" id="lang-en" class="lang-btn">EN</button>
+      <button type="button" id="lang-zh" class="lang-btn">中文</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="card" id="plan-picker">
+      <h2 data-i18n="planCardTitle">Plan</h2>
+
+      <label for="company" data-i18n="companyLabel">Company</label>
+      <select id="company"></select>
+
+      <label for="plan" data-i18n="planLabel">Plan</label>
+      <select id="plan"></select>
+      <p id="plan-status" class="plan-status"></p>
+    </section>
+
+    <section class="card" id="inputs">
+      <h2 data-i18n="inputsCardTitle">Inputs</h2>
+
+      <label for="premium" data-i18n="premiumLabel">Premium (USD)</label>
+      <input
+        id="premium"
+        type="number"
+        inputmode="decimal"
+        min="0"
+        step="1000"
+        value="1000000"
+      />
+
+      <label for="span" data-i18n="spanLabel">Payment span</label>
+      <select id="span"></select>
+      <p id="pf-availability-note" class="pf-availability-note"></p>
+
+      <div class="field-group">
+        <span class="field-group-label" data-i18n="discountOverrideLabel">Discount % per year (editable)</span>
+        <div id="discount-override-inputs" class="discount-override-grid"></div>
+      </div>
+
+      <label class="toggle-row" for="pf-enabled">
+        <span data-i18n="pfToggleLabel">Premium Financing</span>
+        <input id="pf-enabled" type="checkbox" />
+      </label>
+
+      <div id="pf-inputs" hidden>
+        <label for="pf-mode" data-i18n="pfMethodLabel">PF Method</label>
+        <select id="pf-mode"></select>
+
+        <label for="pf-ltv" data-i18n="pfLtvLabel">LTV %</label>
+        <input id="pf-ltv" type="number" inputmode="decimal" min="0" max="100" step="0.1" />
+
+        <label for="pf-rate" data-i18n="pfRateLabel">Loan Interest Rate % p.a.</label>
+        <input id="pf-rate" type="number" inputmode="decimal" min="0" step="0.1" value="2.5" />
+
+        <label for="pf-stress-rate" data-i18n="pfStressLabel">Stress Test Rate % p.a. (optional)</label>
+        <input id="pf-stress-rate" type="number" inputmode="decimal" min="0" step="0.1" placeholder="e.g. 4.5" />
+
+        <div class="field-group">
+          <span class="field-group-label" data-i18n="pfPresetLabel">Saved LTV/rate/discount presets</span>
+          <div class="pf-preset-row">
+            <select id="pf-preset-select"></select>
+            <button id="pf-preset-load" type="button" data-i18n="pfPresetLoadBtn">Load</button>
+            <button id="pf-preset-delete" type="button" data-i18n="pfPresetDeleteBtn">Delete</button>
+          </div>
+          <div class="pf-preset-row">
+            <input id="pf-preset-name" type="text" data-i18n-placeholder="pfPresetNamePlaceholder" placeholder="e.g. Bank A" />
+            <button id="pf-preset-save" type="button" data-i18n="pfPresetSaveBtn">Save current</button>
+          </div>
+        </div>
+      </div>
+
+      <button id="calculate-btn" type="button" data-i18n="calculateBtn">Calculate</button>
+    </section>
+
+    <section class="card" id="summary" hidden>
+      <h2 data-i18n="summaryCardTitle">Summary</h2>
+      <div class="summary-grid">
+        <div><span class="summary-label" data-i18n="sumGross">Gross Premium</span><span id="sum-gross"></span></div>
+        <div><span class="summary-label" data-i18n="sumDiscount">Discount</span><span id="sum-discount"></span></div>
+        <div><span class="summary-label" data-i18n="sumNet">Net Premium</span><span id="sum-net"></span></div>
+      </div>
+      <div class="summary-grid pf-summary-extra" id="pf-summary-extra" hidden>
+        <div><span class="summary-label" data-i18n="sumLtv">LTV</span><span id="sum-ltv"></span></div>
+        <div><span class="summary-label" data-i18n="sumLoan">Loan Amount</span><span id="sum-loan"></span></div>
+        <div><span class="summary-label" data-i18n="sumSelfPay">Self-Pay Amount</span><span id="sum-selfpay"></span></div>
+        <div><span class="summary-label" data-i18n="sumSelfPayRatio">Self-Pay Ratio</span><span id="sum-selfpay-ratio"></span></div>
+        <div><span class="summary-label" data-i18n="sumLeverage">Leverage</span><span id="sum-leverage"></span></div>
+        <div><span class="summary-label" data-i18n="sumMonthlyInterest">Monthly Interest</span><span id="sum-monthly-interest"></span></div>
+      </div>
+    </section>
+
+    <section class="card" id="chart-card" hidden>
+      <h2 data-i18n="chartCardTitle">Chart</h2>
+      <div class="chart-year-picker">
+        <div>
+          <label for="chart-year-1" data-i18n="chartYearA">Year A</label>
+          <select id="chart-year-1"></select>
+        </div>
+        <div>
+          <label for="chart-year-2" data-i18n="chartYearB">Year B</label>
+          <select id="chart-year-2"></select>
+        </div>
+        <div>
+          <label for="chart-year-3" data-i18n="chartYearC">Year C</label>
+          <select id="chart-year-3"></select>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="results-chart"></canvas>
+      </div>
+      <ul id="chart-caption" class="chart-caption"></ul>
+    </section>
+
+    <details class="card" id="results" hidden open>
+      <summary data-i18n="resultsCardTitle">Results</summary>
+      <div class="table-scroll">
+        <table id="results-table">
+          <thead>
+            <tr>
+              <th data-i18n="colYear">Year</th>
+              <th data-i18n="colGuaranteedCV">Guaranteed CV</th>
+              <th data-i18n="colAccumulatedDiv">Accumulated Dividend</th>
+              <th data-i18n="colTerminalDiv">Terminal Dividend</th>
+              <th data-i18n="colTotalSV">Total SV</th>
+              <th data-i18n="colIRR">IRR%</th>
+              <th class="pf-col" hidden data-i18n="colLoanAmount">Loan Amount</th>
+              <th class="pf-col" hidden data-i18n="colCumulativeInterest">Cumulative Interest</th>
+              <th class="pf-col" hidden data-i18n="colValueAfterLoan">Value After Loan Repayment</th>
+              <th class="pf-col" hidden data-i18n="colNetReturn">Net Return</th>
+              <th class="pf-col" hidden data-i18n="colIRRPF">IRR w/ PF%</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="plan-disclaimer" class="disclaimer" hidden></p>
+    </details>
+
+    <section class="card" id="stress-results" hidden>
+      <h2 data-i18n="stressCardTitle">Stress Test</h2>
+      <div class="table-scroll">
+        <table id="stress-table">
+          <thead>
+            <tr>
+              <th data-i18n="colYear">Year</th>
+              <th data-i18n="colStressBase">Net Return (base rate)</th>
+              <th data-i18n="colStressStress">Net Return (stress rate)</th>
+              <th data-i18n="colStressDiff">Difference</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" id="export-card" hidden>
+      <h2 data-i18n="exportCardTitle">Export</h2>
+      <button id="export-pdf-btn" type="button" data-i18n="exportPdfBtn">Export PDF</button>
+      <button id="add-to-comparison-btn" type="button" class="secondary-btn" data-i18n="addToComparisonBtn">Add to Comparison</button>
+    </section>
+
+    <section class="card" id="comparison-card" hidden>
+      <h2 data-i18n="comparisonCardTitle">Compare Plans</h2>
+      <p class="field-group-label" data-i18n="comparisonHint">Calculate a plan, then "Add to Comparison" — up to 3 at a time.</p>
+
+      <div class="chart-year-picker">
+        <div>
+          <label for="comparison-year-1" data-i18n="chartYearA">Year A</label>
+          <select id="comparison-year-1"></select>
+        </div>
+        <div>
+          <label for="comparison-year-2" data-i18n="chartYearB">Year B</label>
+          <select id="comparison-year-2"></select>
+        </div>
+        <div>
+          <label for="comparison-year-3" data-i18n="chartYearC">Year C</label>
+          <select id="comparison-year-3"></select>
+        </div>
+      </div>
+
+      <div class="chart-container">
+        <canvas id="comparison-chart"></canvas>
+      </div>
+
+      <div class="table-scroll">
+        <table id="comparison-table">
+          <thead>
+            <tr>
+              <th data-i18n="colPlan">Plan</th>
+              <th data-i18n="spanLabel">Span</th>
+              <th data-i18n="colNetPremium">Net Premium</th>
+              <th class="comparison-year-col" data-i18n="colTotalSV">Total SV</th>
+              <th class="comparison-year-col" data-i18n="colIRR">IRR%</th>
+              <th class="comparison-year-col" data-i18n="colTotalSV">Total SV</th>
+              <th class="comparison-year-col" data-i18n="colIRR">IRR%</th>
+              <th class="comparison-year-col" data-i18n="colTotalSV">Total SV</th>
+              <th class="comparison-year-col" data-i18n="colIRR">IRR%</th>
+              <th data-i18n="colBreakeven">Breakeven Year</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" id="client-advisor-card">
+      <h2 data-i18n="clientAdvisorCardTitle">Client &amp; Advisor Info</h2>
+
+      <label for="client-name" data-i18n="clientNameLabel">Client Name (optional, for PDF)</label>
+      <input id="client-name" type="text" placeholder="e.g. 陳大文 / John Chan" />
+
+      <label for="advisor-name" data-i18n="advisorName">Name</label>
+      <input id="advisor-name" type="text" placeholder="e.g. 陳大文 / John Chan" />
+
+      <label for="advisor-phone" data-i18n="advisorPhone">Phone / WhatsApp</label>
+      <input id="advisor-phone" type="tel" inputmode="tel" placeholder="+852 xxxxxxxx" />
+
+      <label for="advisor-email" data-i18n="advisorEmail">Email</label>
+      <input id="advisor-email" type="email" inputmode="email" placeholder="you@example.com" />
+      <p class="advisor-note" data-i18n="advisorNote">Shown on PDF exports. Saved on this device only.</p>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="i18n.js"></script>
+  <script src="plans.js"></script>
+  <script src="calculator.js"></script>
+  <script src="app.js"></script>
+  <script src="pdf.js"></script>
+</body>
+</html>
