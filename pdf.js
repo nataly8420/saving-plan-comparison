@@ -68,7 +68,7 @@ async function exportPDF() {
           ? [label, formatMoney(row.totalSV), formatPercent(row.irrPercent), formatMoney(row.netReturn), formatPercent(row.irrWithPFPercent)]
           : [label, formatMoney(row.totalSV), formatPercent(row.irrPercent)];
       }
-      return `<tr>${cells.map((c) => `<td style="padding:4px 8px;border-bottom:1px solid #e2e5ea;">${escapeHtml(String(c))}</td>`).join("")}</tr>`;
+      return `<tr>${cells.map((c) => `<td style="padding:4px 8px;border-bottom:1px solid #f0ece4;">${escapeHtml(String(c))}</td>`).join("")}</tr>`;
     })
     .join("");
 
@@ -77,7 +77,7 @@ async function exportPDF() {
   const container = document.createElement("div");
   container.style.cssText =
     "position:absolute;left:-9999px;top:0;width:760px;padding:24px;background:#ffffff;" +
-    "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang HK','Microsoft YaHei',sans-serif;color:#1a1d23;";
+    "font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang HK','Microsoft YaHei',Roboto,sans-serif;color:#3d3a35;";
   container.innerHTML = `
     <h1 style="font-size:22px;margin:0 0 12px;">${escapeHtml(t("pdfTitle"))}</h1>
     <div style="font-size:13px;line-height:1.6;">
@@ -93,13 +93,13 @@ async function exportPDF() {
     </div>
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:12px;">
       <thead>
-        <tr>${headers.map((h) => `<th style="text-align:left;padding:4px 8px;border-bottom:2px solid #1a1d23;">${escapeHtml(h)}</th>`).join("")}</tr>
+        <tr>${headers.map((h) => `<th style="text-align:left;padding:4px 8px;border-bottom:2px solid #3d3a35;">${escapeHtml(h)}</th>`).join("")}</tr>
       </thead>
       <tbody>${rowsHtml}</tbody>
     </table>
     ${
       plan.disclaimer
-        ? `<div style="font-size:9px;color:#6b7280;margin-top:16px;">
+        ? `<div style="font-size:9px;color:#b0aa9e;margin-top:16px;">
              <strong>${escapeHtml(t("pdfDisclaimerTitle"))}:</strong> ${escapeHtml(plan.disclaimer)}
            </div>`
         : ""
@@ -175,28 +175,28 @@ async function exportComparisonPDF() {
           const y2 = nearestYearAtOrBelow(slot.availableYears, target);
           const r = slot.resultsByYear[y2];
           const approx = y2 !== target ? "~" : "";
-          return `<td style="padding:5px 8px;border-bottom:1px solid #e2e5ea;text-align:right;">${approx}${escapeHtml(formatMoney(r.totalSV))}</td>
-                  <td style="padding:5px 8px;border-bottom:1px solid #e2e5ea;text-align:right;">${approx}${escapeHtml(formatPercent(r.irrPercent))}</td>`;
+          return `<td style="padding:5px 8px;border-bottom:1px solid #f0ece4;text-align:right;">${approx}${escapeHtml(formatMoney(r.totalSV))}</td>
+                  <td style="padding:5px 8px;border-bottom:1px solid #f0ece4;text-align:right;">${approx}${escapeHtml(formatPercent(r.irrPercent))}</td>`;
         })
         .join("");
       return `<tr>
-        <td style="padding:5px 8px;border-bottom:1px solid #e2e5ea;">${escapeHtml(slot.company)} — ${escapeHtml(slot.planName)}${slot.hasPF ? " (PF)" : ""}</td>
-        <td style="padding:5px 8px;border-bottom:1px solid #e2e5ea;">${slot.span === 1 ? escapeHtml(t("yearSingular")) : escapeHtml(t("yearsPlural", slot.span))}</td>
-        <td style="padding:5px 8px;border-bottom:1px solid #e2e5ea;text-align:right;">${escapeHtml(formatMoney(slot.netPremium))}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #f0ece4;">${escapeHtml(slot.company)} — ${escapeHtml(slot.planName)}${slot.hasPF ? " (PF)" : ""}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #f0ece4;">${slot.span === 1 ? escapeHtml(t("yearSingular")) : escapeHtml(t("yearsPlural", slot.span))}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #f0ece4;text-align:right;">${escapeHtml(formatMoney(slot.netPremium))}</td>
         ${yearCells}
-        <td style="padding:5px 8px;border-bottom:1px solid #e2e5ea;">${slot.breakEvenYear !== null ? escapeHtml(t("yearLabel", slot.breakEvenYear)) : escapeHtml(t("comparisonNoBreakeven"))}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #f0ece4;">${slot.breakEvenYear !== null ? escapeHtml(t("yearLabel", slot.breakEvenYear)) : escapeHtml(t("comparisonNoBreakeven"))}</td>
       </tr>`;
     })
     .join("");
 
   const yearHeaderCells = compYears
-    .map((yr) => `<th colspan="2" style="text-align:center;padding:5px 8px;border-bottom:2px solid #1a1d23;">${escapeHtml(t("yearLabel", yr))}</th>`)
+    .map((yr) => `<th colspan="2" style="text-align:center;padding:5px 8px;border-bottom:2px solid #3d3a35;">${escapeHtml(t("yearLabel", yr))}</th>`)
     .join("");
   const subHeaderCells = compYears
     .map(
       () =>
-        `<th style="text-align:right;padding:0 8px 4px;font-weight:400;color:#6b7280;">${escapeHtml(t("colTotalSV"))}</th>
-         <th style="text-align:right;padding:0 8px 4px;font-weight:400;color:#6b7280;">${escapeHtml(t("colIRR"))}</th>`
+        `<th style="text-align:right;padding:0 8px 4px;font-weight:400;color:#b0aa9e;">${escapeHtml(t("colTotalSV"))}</th>
+         <th style="text-align:right;padding:0 8px 4px;font-weight:400;color:#b0aa9e;">${escapeHtml(t("colIRR"))}</th>`
     )
     .join("");
 
@@ -205,7 +205,7 @@ async function exportComparisonPDF() {
   const container = document.createElement("div");
   container.style.cssText =
     "position:absolute;left:-9999px;top:0;width:1120px;padding:24px;background:#ffffff;" +
-    "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'PingFang HK','Microsoft YaHei',sans-serif;color:#1a1d23;";
+    "font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang HK','Microsoft YaHei',Roboto,sans-serif;color:#3d3a35;";
   container.innerHTML = `
     <h1 style="font-size:22px;margin:0 0 12px;">${escapeHtml(t("comparisonCardTitle"))}</h1>
     <div style="font-size:13px;line-height:1.6;">
@@ -216,11 +216,11 @@ async function exportComparisonPDF() {
     <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:12px;">
       <thead>
         <tr>
-          <th rowspan="2" style="text-align:left;padding:5px 8px;border-bottom:2px solid #1a1d23;vertical-align:bottom;">${escapeHtml(t("colPlan"))}</th>
-          <th rowspan="2" style="text-align:left;padding:5px 8px;border-bottom:2px solid #1a1d23;vertical-align:bottom;">${escapeHtml(t("spanLabel"))}</th>
-          <th rowspan="2" style="text-align:right;padding:5px 8px;border-bottom:2px solid #1a1d23;vertical-align:bottom;">${escapeHtml(t("colNetPremium"))}</th>
+          <th rowspan="2" style="text-align:left;padding:5px 8px;border-bottom:2px solid #3d3a35;vertical-align:bottom;">${escapeHtml(t("colPlan"))}</th>
+          <th rowspan="2" style="text-align:left;padding:5px 8px;border-bottom:2px solid #3d3a35;vertical-align:bottom;">${escapeHtml(t("spanLabel"))}</th>
+          <th rowspan="2" style="text-align:right;padding:5px 8px;border-bottom:2px solid #3d3a35;vertical-align:bottom;">${escapeHtml(t("colNetPremium"))}</th>
           ${yearHeaderCells}
-          <th rowspan="2" style="text-align:left;padding:5px 8px;border-bottom:2px solid #1a1d23;vertical-align:bottom;">${escapeHtml(t("colBreakeven"))}</th>
+          <th rowspan="2" style="text-align:left;padding:5px 8px;border-bottom:2px solid #3d3a35;vertical-align:bottom;">${escapeHtml(t("colBreakeven"))}</th>
         </tr>
         <tr>${subHeaderCells}</tr>
       </thead>
@@ -228,7 +228,7 @@ async function exportComparisonPDF() {
     </table>
     ${
       disclaimers.length
-        ? `<div style="font-size:8px;color:#6b7280;margin-top:16px;">
+        ? `<div style="font-size:8px;color:#b0aa9e;margin-top:16px;">
              <strong>${escapeHtml(t("pdfDisclaimerTitle"))}:</strong> ${disclaimers.map(escapeHtml).join(" ")}
            </div>`
         : ""

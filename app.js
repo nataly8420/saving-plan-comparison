@@ -245,17 +245,70 @@ function populateDiscountOverrideInputs() {
     input.step = "0.1";
     input.className = "discount-override-input";
     input.value = (seed[i] * 100).toFixed(2);
+    input.addEventListener("input", updateDiscountDisclosureSummary);
     wrap.appendChild(label);
     wrap.appendChild(input);
     container.appendChild(wrap);
   }
   state.discountOverridePercents = seed;
+  updateDiscountDisclosureSummary();
 }
 
 function readDiscountOverridePercents() {
   return Array.from(document.querySelectorAll(".discount-override-input")).map(
     (input) => (Number(input.value) || 0) / 100
   );
+}
+
+// Keeps the collapsed <details> summary showing current values (e.g. "Y1
+// 10.0%, Y2 2.0%") so the discount grid's state is visible without opening
+// it — the grid itself defaults closed to keep the input stage uncluttered.
+function updateDiscountDisclosureSummary() {
+  const values = Array.from(document.querySelectorAll(".discount-override-input")).map(
+    (input, i) => `Y${i + 1} ${(Number(input.value) || 0).toFixed(1)}%`
+  );
+  const el = document.getElementById("discount-disclosure-summary");
+  if (el) el.textContent = values.join(", ");
+}
+
+// --- Plan-summary collapse: after Calculate, the Company/Plan/Inputs form
+// collapses into a compact one-line summary so it stops competing with
+// Results for attention — tap Edit to bring the full form back.
+function collapsePlanForm() {
+  const plan = getCurrentPlan();
+  const spanLabel = state.paymentSpan === 1 ? t("yearSingular") : t("yearsPlural", state.paymentSpan);
+  document.getElementById("plan-summary-text").textContent = `${plan.company} — ${plan.name}`;
+  document.getElementById("plan-summary-subtext").textContent = `${spanLabel} · ${formatMoney(state.grossPremium)}`;
+  document.getElementById("plan-form-wrap").hidden = true;
+  document.getElementById("plan-summary-bar").hidden = false;
+}
+
+function expandPlanForm() {
+  document.getElementById("plan-form-wrap").hidden = false;
+  document.getElementById("plan-summary-bar").hidden = true;
+}
+
+// --- Sticky step nav: click-to-scroll + scroll-spy via IntersectionObserver.
+function initStepNav() {
+  const items = document.querySelectorAll(".step-nav-item");
+  items.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = document.getElementById(btn.dataset.target);
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          items.forEach((btn) => btn.classList.toggle("active", btn.dataset.target === entry.target.id));
+        }
+      });
+    },
+    { rootMargin: "-20% 0px -70% 0px" }
+  );
+  document.querySelectorAll(".zone").forEach((zone) => observer.observe(zone));
 }
 
 function populatePFModeSelect() {
@@ -487,19 +540,21 @@ function renderChart(results, pfResults) {
     }),
   ];
 
+  // Palette: sage/blue/taupe/gold/coral — muted, distinguishable at a glance,
+  // matches the app's ivory/coral design system rather than primary web colors.
   const datasets = [
-    { label: t("datasetPrincipal"), backgroundColor: "#2563eb", data: segments.map((s) => s.principal), datalabels: { color: "#fff" } },
+    { label: t("datasetPrincipal"), backgroundColor: "#8fbfa8", data: segments.map((s) => s.principal), datalabels: { color: "#1f3a2d" } },
   ];
   if (byYearPF) {
-    datasets.push({ label: t("datasetLoan"), backgroundColor: "#f97316", data: segments.map((s) => s.loan), datalabels: { color: "#fff" } });
+    datasets.push({ label: t("datasetLoan"), backgroundColor: "#8aa8c2", data: segments.map((s) => s.loan), datalabels: { color: "#1f3040" } });
   }
   if (discountAmount > 0.01) {
-    datasets.push({ label: t("datasetDiscount"), backgroundColor: "#a855f7", data: segments.map((s) => s.discount), datalabels: { color: "#fff" } });
+    datasets.push({ label: t("datasetDiscount"), backgroundColor: "#c9beac", data: segments.map((s) => s.discount), datalabels: { color: "#4a4030" } });
   }
   if (byYearPF) {
-    datasets.push({ label: t("datasetInterest"), backgroundColor: "#eab308", data: segments.map((s) => s.interest), datalabels: { color: "#1a1d23" } });
+    datasets.push({ label: t("datasetInterest"), backgroundColor: "#f0c265", data: segments.map((s) => s.interest), datalabels: { color: "#4a3510" } });
   }
-  datasets.push({ label: t("datasetReturn"), backgroundColor: "#16a34a", data: segments.map((s) => s.returnAboveCost), datalabels: { color: "#fff" } });
+  datasets.push({ label: t("datasetReturn"), backgroundColor: "#e08a72", data: segments.map((s) => s.returnAboveCost), datalabels: { color: "#fff" } });
 
   // Only label a segment if it's a large-enough slice of the tallest bar —
   // otherwise tiny slivers (e.g. a small Interest sliver) get an unreadable
@@ -722,7 +777,7 @@ function renderComparisonTable() {
 function renderComparisonChart() {
   const compYears = readComparisonYears();
   const labels = compYears.map((y) => t("yearLabel", y));
-  const colors = ["#2563eb", "#f97316", "#16a34a"];
+  const colors = ["#e08a72", "#8aa8c2", "#8fbfa8"];
 
   const datasets = state.comparisonSlots.map((slot, i) => ({
     label: `${slot.company} ${slot.planName}`,
@@ -810,6 +865,7 @@ function calculate() {
   populateChartYearSelects();
   renderChart(results, pfResults);
   document.getElementById("export-card").hidden = false;
+  collapsePlanForm();
 }
 
 function syncPFVisibility() {
@@ -951,6 +1007,8 @@ function init() {
   if (state.pfLtvPercent !== null) document.getElementById("pf-ltv").value = state.pfLtvPercent;
   if (state.pfStressRatePercent !== null) document.getElementById("pf-stress-rate").value = state.pfStressRatePercent;
   syncPFVisibility();
+  initStepNav();
+  document.getElementById("plan-summary-edit-btn").addEventListener("click", expandPlanForm);
 
   document.getElementById("lang-en").addEventListener("click", () => switchLang("en"));
   document.getElementById("lang-zh").addEventListener("click", () => switchLang("zh"));

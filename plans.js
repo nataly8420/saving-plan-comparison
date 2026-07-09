@@ -1136,45 +1136,8 @@ const PLANS = {
   },
 };
 
-// --- Placeholder plans awaiting real proposal data ---
-// One entry per company on the comparison shortlist. Each has the same
-// shape as a real plan (zeroed returnTable, single 0% discount tier, no PF)
-// so the UI and calculator work identically once real ratios are dropped in
-// — just replace the span 1 data per the BOC Life example above.
-// hasRealData:false flags these as "no data yet" in the plan picker.
-const PLACEHOLDER_COMPANIES = [
-  { id: "aia", company: "AIA" },
-  { id: "pru", company: "Prudential 保誠" },
-  { id: "manulife", company: "Manulife 宏利" },
-  { id: "chubb", company: "Chubb 安達" },
-  { id: "generali", company: "Generali 忠意" },
-  { id: "chinalife", company: "China Life 中國人壽" },
-  { id: "zurich", company: "Zurich 蘇黎世" },
-];
-
-for (const { id, company } of PLACEHOLDER_COMPANIES) {
-  PLANS[id] = {
-    id,
-    name: "Plan TBD",
-    company,
-    hasRealData: false,
-    currency: "USD",
-    availableSpans: [1],
-    disclaimer: `No proposal data on file yet for ${company} — send a 1M USD single-premium proposal to populate this plan.`,
-    spans: {
-      1: {
-        returnTable: {
-          1: { guaranteedCVRatio: 0, accumulatedDivRatio: 0, terminalDivRatio: 0 },
-          5: { guaranteedCVRatio: 0, accumulatedDivRatio: 0, terminalDivRatio: 0 },
-          10: { guaranteedCVRatio: 0, accumulatedDivRatio: 0, terminalDivRatio: 0 },
-        },
-        terminalDivRealizationRate: 1.0,
-        premiumDiscountTiers: [{ minPremium: 0, firstYearDiscount: 0, bonusDiscount: 0 }],
-        day1SVRatio: 0,
-        pf: null,
-        maxYearsToShow: 10,
-        defaultCompareYears: [1, 5, 10],
-      },
-    },
-  };
-}
+// Placeholder companies (AIA, Prudential, Manulife, Chubb, Generali, China
+// Life, Zurich) were removed per user request — none had real proposal
+// data, and only companies actively being worked (BOC/AXA/CTF/FWD, all
+// above) are in scope for now. Re-add the same way as any real product
+// above once a real proposal exists for one of them.
