@@ -504,6 +504,54 @@ td:first-child {
   margin-top: 0;
 }
 
+.year-range-picker {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.year-range-picker label {
+  margin-top: 0;
+}
+
+.comparison-best-cell {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.comparison-best-badge {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  background: #fdf1ec;
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  vertical-align: middle;
+}
+
+.comparison-add-note {
+  margin: 8px 0 0;
+  font-size: 0.78rem;
+  color: var(--color-warning-text);
+  background: var(--color-warning-bg);
+  border: 0.5px solid var(--color-warning-border);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+}
+
+.comparison-delta-note {
+  margin: 12px 0 0;
+  font-size: 0.8rem;
+  color: var(--color-text-body);
+  background: var(--color-card-soft);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+}
+
 .chart-caption {
   list-style: none;
   margin: 16px 0 0;

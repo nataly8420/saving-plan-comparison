@@ -23,7 +23,6 @@ async function exportPDF() {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const plan = PLANS[state.selectedPlanId];
-  const resolvedPlan = getCurrentPlan();
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 40;
   let y = margin;
@@ -37,41 +36,10 @@ async function exportPDF() {
   }
   const dateStr = new Date().toLocaleDateString();
 
-  const pfOn = state.pfEnabled && !!lastPFResults;
-  let pfLine = `${t("pdfPfStatus")}: ${pfOn ? t("pdfPfOn") : t("pdfPfOff")}`;
-  if (pfOn) {
-    const mode = resolvedPlan.pf.modes[state.pfMode];
-    const modeLabel = (mode && mode.label) || state.pfMode;
-    const ltv = document.getElementById("pf-ltv").value;
-    pfLine += ` (${modeLabel}, LTV ${ltv}%, ${state.pfLoanRatePercent}% p.a.)`;
-  }
-
-  // --- Curated summary table: Year 0 + the 3 chart comparison years ---
-  const netPremium = totalNetPremium(state.grossPremium, state.paymentSpan, resolvedPlan, state.discountOverridePercents);
-  const byYear = Object.fromEntries((lastPFResults || lastResults).map((r) => [r.year, r]));
-  const tableYears = [0, ...state.chartYears];
-
-  const headers = pfOn
-    ? [t("colYear"), t("colTotalSV"), t("colIRR"), t("colNetReturn"), t("colIRRPF")]
-    : [t("colYear"), t("colTotalSV"), t("colIRR")];
-
-  const rowsHtml = tableYears
-    .map((yr) => {
-      const label = t("yearLabel", yr);
-      let cells;
-      if (yr === 0) {
-        cells = pfOn ? [label, formatMoney(netPremium), "—", "—", "—"] : [label, formatMoney(netPremium), "—"];
-      } else {
-        const row = byYear[yr];
-        if (!row) return "";
-        cells = pfOn
-          ? [label, formatMoney(row.totalSV), formatPercent(row.irrPercent), formatMoney(row.netReturn), formatPercent(row.irrWithPFPercent)]
-          : [label, formatMoney(row.totalSV), formatPercent(row.irrPercent)];
-      }
-      return `<tr>${cells.map((c) => `<td style="padding:4px 8px;border-bottom:1px solid #f0ece4;">${escapeHtml(String(c))}</td>`).join("")}</tr>`;
-    })
-    .join("");
-
+  // Per user: keep the client-facing PDF to just the plan/premium/span
+  // basics + chart + disclaimer — no PF configuration detail line, and no
+  // curated numbers table (the chart's own data labels already carry the
+  // actual figures for the selected years, so the table was redundant).
   const advisorParts = [advisor.name, advisor.phone, advisor.email].filter(Boolean);
 
   const container = document.createElement("div");
@@ -89,14 +57,7 @@ async function exportPDF() {
     <div style="font-size:13px;line-height:1.6;">
       <div>${escapeHtml(t("premiumLabel"))}: ${escapeHtml(formatMoney(state.grossPremium))}</div>
       <div>${escapeHtml(t("spanLabel"))}: ${escapeHtml(state.paymentSpan === 1 ? t("yearSingular") : t("yearsPlural", state.paymentSpan))}</div>
-      <div>${escapeHtml(pfLine)}</div>
     </div>
-    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:12px;">
-      <thead>
-        <tr>${headers.map((h) => `<th style="text-align:left;padding:4px 8px;border-bottom:2px solid #3d3a35;">${escapeHtml(h)}</th>`).join("")}</tr>
-      </thead>
-      <tbody>${rowsHtml}</tbody>
-    </table>
     ${
       plan.disclaimer
         ? `<div style="font-size:9px;color:#b0aa9e;margin-top:16px;">
@@ -143,6 +104,19 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+// Evenly samples down to maxCount years, always keeping the first and last
+// of the range so the printed table still spans the full picture even
+// though it can't show every single year like the on-screen table can.
+function sampleYearsForPdf(years, maxCount) {
+  if (years.length <= maxCount) return years;
+  const picked = [];
+  for (let i = 0; i < maxCount; i++) {
+    const idx = Math.round((i * (years.length - 1)) / (maxCount - 1));
+    picked.push(years[idx]);
+  }
+  return [...new Set(picked)];
+}
+
 // Client-facing side-by-side comparison PDF — same CJK-safe html2canvas
 // header technique as exportPDF(), plus the comparison chart and a wide
 // table with one column-group per slot (rather than per-year, since the
@@ -166,7 +140,11 @@ async function exportComparisonPDF() {
   }
   const dateStr = new Date().toLocaleDateString();
   const advisorParts = [advisor.name, advisor.phone, advisor.email].filter(Boolean);
-  const compYears = readComparisonYears();
+  // The on-screen table can show a whole typed year range (could be dozens
+  // of columns); a fixed-width printable PDF page can't, so cap it to an
+  // evenly-sampled subset (always including the first and last year) —
+  // the chart image below still shows the full range as a continuous line.
+  const compYears = sampleYearsForPdf(getComparisonYears(), 6);
 
   const rowsHtml = state.comparisonSlots
     .map((slot) => {

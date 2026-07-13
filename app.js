@@ -34,8 +34,9 @@ const state = {
   // Snapshots added via "Add to Comparison" — not persisted to localStorage
   // (session-only), since these are meant for a single side-by-side
   // discussion with a client, not a saved artifact. See addToComparison().
+  // Comparison years are a manually-typed range (#comparison-year-from/to
+  // in the DOM), not tracked in state — see readComparisonYearRange().
   comparisonSlots: [],
-  comparisonYears: [null, null, null],
 };
 
 // Cached from the last calculate() call so the chart can re-render when the
@@ -85,10 +86,10 @@ function loadState() {
 }
 
 function saveState() {
-  // comparisonSlots/comparisonYears are deliberately session-only (see the
-  // comment on state.comparisonSlots) — a stale slot snapshotting an old
-  // plans.js shape could otherwise resurrect broken data on next load.
-  const { comparisonSlots, comparisonYears, ...persisted } = state;
+  // comparisonSlots is deliberately session-only (see the comment on
+  // state.comparisonSlots) — a stale slot snapshotting an old plans.js
+  // shape could otherwise resurrect broken data on next load.
+  const { comparisonSlots, ...persisted } = state;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
 }
 
@@ -129,7 +130,7 @@ function switchLang(lang) {
     renderChart(lastResults, lastPFResults);
   }
   if (state.comparisonSlots.length > 0) {
-    populateComparisonYearSelects();
+    populateComparisonYearRange();
     renderComparisonTable();
     renderComparisonChart();
   }
@@ -638,6 +639,18 @@ let comparisonChartInstance = null;
 
 function addToComparison() {
   if (!lastResults) return;
+  const note = document.getElementById("comparison-add-note");
+
+  const alreadyAdded = state.comparisonSlots.some(
+    (s) => s.planId === state.selectedPlanId && s.span === state.paymentSpan
+  );
+  if (alreadyAdded) {
+    note.textContent = t("comparisonDuplicateNote");
+    note.hidden = false;
+    return;
+  }
+  note.hidden = true;
+
   const plan = getCurrentPlan();
   const rows = lastPFResults || lastResults;
   const netPremium = totalNetPremium(state.grossPremium, state.paymentSpan, plan, state.discountOverridePercents);
@@ -683,7 +696,7 @@ function addToComparison() {
   state.comparisonSlots.push(slot);
   if (state.comparisonSlots.length > 3) state.comparisonSlots.shift(); // FIFO cap at 3
   document.getElementById("comparison-card").hidden = false;
-  populateComparisonYearSelects();
+  populateComparisonYearRange();
   renderComparisonTable();
   renderComparisonChart();
 }
@@ -694,7 +707,7 @@ function removeComparisonSlot(id) {
     document.getElementById("comparison-card").hidden = true;
     return;
   }
-  populateComparisonYearSelects();
+  populateComparisonYearRange();
   renderComparisonTable();
   renderComparisonChart();
 }
@@ -712,42 +725,72 @@ function nearestYearAtOrBelow(availableYears, target) {
   return best !== null ? best : availableYears[0];
 }
 
-function readComparisonYears() {
-  return ["comparison-year-1", "comparison-year-2", "comparison-year-3"].map(
-    (id) => Number(document.getElementById(id).value)
-  );
+function readComparisonYearRange() {
+  const from = Number(document.getElementById("comparison-year-from").value) || 1;
+  const to = Number(document.getElementById("comparison-year-to").value) || from;
+  return [Math.min(from, to), Math.max(from, to)];
 }
 
-function populateComparisonYearSelects() {
+// The comparison years are now a manually-typed range (not a 3-point picker)
+// so the table/chart can show the full progression across years, not just
+// 3 arbitrary snapshots — the union of every year that exists in ANY added
+// slot's own data, filtered to the typed range.
+function getComparisonYears() {
+  const [from, to] = readComparisonYearRange();
+  const allYears = new Set();
+  state.comparisonSlots.forEach((s) =>
+    s.availableYears.forEach((y) => {
+      if (y >= from && y <= to) allYears.add(y);
+    })
+  );
+  return [...allYears].sort((a, b) => a - b);
+}
+
+// Only fills in a default From/To the first time (fields still empty) —
+// once the advisor has typed a range, later Add/Remove doesn't clobber it.
+function populateComparisonYearRange() {
   const allYears = new Set();
   state.comparisonSlots.forEach((s) => s.availableYears.forEach((y) => allYears.add(y)));
   const years = [...allYears].sort((a, b) => a - b);
-  const defaults =
-    years.length >= 3
-      ? [years[Math.floor(years.length * 0.25)], years[Math.floor(years.length * 0.5)], years[years.length - 1]]
-      : years;
-
-  ["comparison-year-1", "comparison-year-2", "comparison-year-3"].forEach((id, i) => {
-    const select = document.getElementById(id);
-    const prevValue = state.comparisonYears[i];
-    select.innerHTML = "";
-    for (const year of years) {
-      const opt = document.createElement("option");
-      opt.value = year;
-      opt.textContent = t("yearLabel", year);
-      select.appendChild(opt);
-    }
-    const chosen = prevValue && years.includes(prevValue) ? prevValue : defaults[i] || years[0];
-    select.value = chosen;
-    state.comparisonYears[i] = chosen;
-  });
+  if (years.length === 0) return;
+  const fromInput = document.getElementById("comparison-year-from");
+  const toInput = document.getElementById("comparison-year-to");
+  if (!fromInput.value) fromInput.value = years[0];
+  if (!toInput.value) toInput.value = years[years.length - 1];
 }
 
 function renderComparisonTable() {
+  const years = getComparisonYears();
+  const thead = document.querySelector("#comparison-table thead");
   const tbody = document.querySelector("#comparison-table tbody");
-  tbody.innerHTML = "";
-  const compYears = readComparisonYears();
 
+  thead.innerHTML = `
+    <tr>
+      <th rowspan="2">${t("colPlan")}</th>
+      <th rowspan="2">${t("spanLabel")}</th>
+      <th rowspan="2">${t("colNetPremium")}</th>
+      ${years.map((y) => `<th class="comparison-year-col" colspan="2">${t("yearLabel", y)}</th>`).join("")}
+      <th rowspan="2">${t("colBreakeven")}</th>
+      <th rowspan="2"></th>
+    </tr>
+    <tr>
+      ${years.map(() => `<th class="comparison-year-col">${t("colTotalSV")}</th><th>${t("colIRR")}</th>`).join("")}
+    </tr>
+  `;
+
+  // Highlights the highest Total SV per year-column across the added slots
+  // — the quickest way to answer "which plan is ahead at year N" at a glance.
+  const bestPerYear = {};
+  for (const target of years) {
+    let best = -Infinity;
+    for (const slot of state.comparisonSlots) {
+      const y = nearestYearAtOrBelow(slot.availableYears, target);
+      best = Math.max(best, slot.resultsByYear[y].totalSV);
+    }
+    bestPerYear[target] = best;
+  }
+
+  tbody.innerHTML = "";
   for (const slot of state.comparisonSlots) {
     const tr = document.createElement("tr");
     let html = `
@@ -755,11 +798,12 @@ function renderComparisonTable() {
       <td>${slot.span === 1 ? t("yearSingular") : t("yearsPlural", slot.span)}</td>
       <td>${formatMoney(slot.netPremium)}</td>
     `;
-    for (const target of compYears) {
+    for (const target of years) {
       const y = nearestYearAtOrBelow(slot.availableYears, target);
       const r = slot.resultsByYear[y];
       const approx = y !== target ? "~" : "";
-      html += `<td>${approx}${formatMoney(r.totalSV)}</td><td>${approx}${formatPercent(r.irrPercent)}</td>`;
+      const isBest = state.comparisonSlots.length > 1 && r.totalSV === bestPerYear[target];
+      html += `<td class="${isBest ? "comparison-best-cell" : ""}">${approx}${formatMoney(r.totalSV)}${isBest ? ` <span class="comparison-best-badge">${t("comparisonBestBadge")}</span>` : ""}</td><td>${approx}${formatPercent(r.irrPercent)}</td>`;
     }
     html += `
       <td>${slot.breakEvenYear !== null ? t("yearLabel", slot.breakEvenYear) : t("comparisonNoBreakeven")}</td>
@@ -772,21 +816,70 @@ function renderComparisonTable() {
   tbody.querySelectorAll(".comparison-remove-btn").forEach((btn) => {
     btn.addEventListener("click", () => removeComparisonSlot(Number(btn.dataset.id)));
   });
+
+  renderComparisonDelta(years);
+}
+
+// A one-line, plain-language summary of the gap between the leading plan
+// and the next best at the end of the chosen range — the "so what" that a
+// wide table of numbers doesn't say out loud on its own.
+function renderComparisonDelta(years) {
+  const note = document.getElementById("comparison-delta-note");
+  if (state.comparisonSlots.length < 2 || years.length === 0) {
+    note.textContent = "";
+    return;
+  }
+  const lastYear = years[years.length - 1];
+  const ranked = state.comparisonSlots
+    .map((slot) => {
+      const y = nearestYearAtOrBelow(slot.availableYears, lastYear);
+      return { slot, value: slot.resultsByYear[y].totalSV };
+    })
+    .sort((a, b) => b.value - a.value);
+  const [best, second] = ranked;
+  const diff = best.value - second.value;
+  const pct = second.value > 0 ? (diff / second.value) * 100 : 0;
+  note.textContent = t(
+    "comparisonDeltaText",
+    t("yearLabel", lastYear),
+    `${best.slot.company} ${best.slot.planName}`,
+    formatMoney(diff),
+    pct.toFixed(1),
+    `${second.slot.company} ${second.slot.planName}`
+  );
 }
 
 function renderComparisonChart() {
-  const compYears = readComparisonYears();
-  const labels = compYears.map((y) => t("yearLabel", y));
+  const years = getComparisonYears();
+  const labels = years.map((y) => t("yearLabel", y));
   const colors = ["#e08a72", "#8aa8c2", "#8fbfa8"];
 
+  // Line chart, not grouped bars — with a range of years now typed manually
+  // instead of 3 fixed points, a line makes the progression across years
+  // (and where trajectories cross) legible at a glance; a datalabel on just
+  // the last point per line puts the actual number on the chart itself
+  // instead of requiring a hover to find out what a bar's height means.
   const datasets = state.comparisonSlots.map((slot, i) => ({
     label: `${slot.company} ${slot.planName}`,
-    data: compYears.map((target) => {
+    data: years.map((target) => {
       const y = nearestYearAtOrBelow(slot.availableYears, target);
       return slot.resultsByYear[y].totalSV;
     }),
+    borderColor: colors[i % colors.length],
     backgroundColor: colors[i % colors.length],
-    datalabels: { color: "#fff" },
+    borderWidth: 2.5,
+    pointRadius: 3,
+    pointHoverRadius: 5,
+    tension: 0.15,
+    fill: false,
+    datalabels: {
+      color: colors[i % colors.length],
+      display: (ctx) => ctx.dataIndex === ctx.dataset.data.length - 1,
+      formatter: (value) => formatMoney(value),
+      align: "right",
+      anchor: "end",
+      font: { size: 10, weight: "600" },
+    },
   }));
 
   if (comparisonChartInstance) comparisonChartInstance.destroy();
@@ -795,21 +888,17 @@ function renderComparisonChart() {
   void card.offsetWidth; // forces synchronous reflow — see renderChart()'s comment on the same pattern
   const ctx = document.getElementById("comparison-chart").getContext("2d");
   comparisonChartInstance = new Chart(ctx, {
-    type: "bar",
+    type: "line",
     data: { labels, datasets },
     plugins: [ChartDataLabels, chartWhiteBackgroundPlugin],
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      layout: { padding: { right: 64 } },
       scales: { y: { ticks: { callback: (v) => formatMoney(v) } } },
       plugins: {
         tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatMoney(ctx.parsed.y)}` } },
-        datalabels: {
-          formatter: (value) => formatMoney(value),
-          font: { size: 9 },
-          anchor: "end",
-          align: "top",
-        },
+        datalabels: {},
       },
     },
   });
@@ -1071,8 +1160,8 @@ function init() {
   document.getElementById("add-to-comparison-btn").addEventListener("click", addToComparison);
   document.getElementById("export-comparison-pdf-btn").addEventListener("click", exportComparisonPDF);
 
-  ["comparison-year-1", "comparison-year-2", "comparison-year-3"].forEach((id) => {
-    document.getElementById(id).addEventListener("change", () => {
+  ["comparison-year-from", "comparison-year-to"].forEach((id) => {
+    document.getElementById(id).addEventListener("input", () => {
       if (state.comparisonSlots.length > 0) {
         renderComparisonTable();
         renderComparisonChart();

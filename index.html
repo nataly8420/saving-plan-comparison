@@ -196,6 +196,7 @@
         <h2 data-i18n="exportCardTitle">Export</h2>
         <button id="export-pdf-btn" type="button" data-i18n="exportPdfBtn">Export PDF</button>
         <button id="add-to-comparison-btn" type="button" class="secondary-btn" data-i18n="addToComparisonBtn">Add to Comparison</button>
+        <p id="comparison-add-note" class="comparison-add-note" hidden></p>
       </section>
     </div>
 
@@ -204,18 +205,14 @@
         <h2 data-i18n="comparisonCardTitle">Compare Plans</h2>
         <p class="field-group-label" data-i18n="comparisonHint">Calculate a plan, then "Add to Comparison" — up to 3 at a time.</p>
 
-        <div class="chart-year-picker">
+        <div class="year-range-picker">
           <div>
-            <label for="comparison-year-1" data-i18n="chartYearA">Year A</label>
-            <select id="comparison-year-1"></select>
+            <label for="comparison-year-from" data-i18n="yearRangeFrom">From year</label>
+            <input id="comparison-year-from" type="number" inputmode="numeric" min="1" step="1" />
           </div>
           <div>
-            <label for="comparison-year-2" data-i18n="chartYearB">Year B</label>
-            <select id="comparison-year-2"></select>
-          </div>
-          <div>
-            <label for="comparison-year-3" data-i18n="chartYearC">Year C</label>
-            <select id="comparison-year-3"></select>
+            <label for="comparison-year-to" data-i18n="yearRangeTo">To year</label>
+            <input id="comparison-year-to" type="number" inputmode="numeric" min="1" step="1" />
           </div>
         </div>
 
@@ -225,24 +222,11 @@
 
         <div class="table-scroll">
           <table id="comparison-table">
-            <thead>
-              <tr>
-                <th data-i18n="colPlan">Plan</th>
-                <th data-i18n="spanLabel">Span</th>
-                <th data-i18n="colNetPremium">Net Premium</th>
-                <th class="comparison-year-col" data-i18n="colTotalSV">Total SV</th>
-                <th class="comparison-year-col" data-i18n="colIRR">IRR%</th>
-                <th class="comparison-year-col" data-i18n="colTotalSV">Total SV</th>
-                <th class="comparison-year-col" data-i18n="colIRR">IRR%</th>
-                <th class="comparison-year-col" data-i18n="colTotalSV">Total SV</th>
-                <th class="comparison-year-col" data-i18n="colIRR">IRR%</th>
-                <th data-i18n="colBreakeven">Breakeven Year</th>
-                <th></th>
-              </tr>
-            </thead>
+            <thead></thead>
             <tbody></tbody>
           </table>
         </div>
+        <p id="comparison-delta-note" class="comparison-delta-note"></p>
         <button id="export-comparison-pdf-btn" type="button" data-i18n="exportComparisonPdfBtn">Export Comparison PDF</button>
       </section>
     </div>
