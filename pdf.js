@@ -18,12 +18,13 @@
 // quality than screenshotting the canvas via html2canvas).
 
 async function exportPDF() {
-  if (!lastResults || !chartInstance) return;
+  if (!lastResults || !chartInstance || !planLineChartInstance) return;
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const plan = PLANS[state.selectedPlanId];
   const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 40;
   let y = margin;
 
@@ -93,6 +94,20 @@ async function exportPDF() {
   const imgWidth = pageWidth - margin * 2;
   const imgHeight = imgWidth * (chartInstance.height / chartInstance.width);
   doc.addImage(imgData, "JPEG", margin, y, imgWidth, imgHeight);
+  y += imgHeight + 16;
+
+  // --- Line chart: full-range growth trajectory (0 to last policy year),
+  // not just the 3 snapshot years the bar chart above shows — includes the
+  // bank-rate reference line too, if the advisor entered one.
+  if (y + 200 > pageHeight - margin) {
+    doc.addPage();
+    y = margin;
+  }
+  planLineChartInstance.resize();
+  const lineImgData = planLineChartInstance.toBase64Image("image/jpeg", 0.92);
+  const lineImgWidth = pageWidth - margin * 2;
+  const lineImgHeight = lineImgWidth * (planLineChartInstance.height / planLineChartInstance.width);
+  doc.addImage(lineImgData, "JPEG", margin, y, lineImgWidth, lineImgHeight);
 
   const filenameBase = (clientName || plan.name).replace(/[^a-zA-Z0-9一-鿿]+/g, "_");
   doc.save(`${filenameBase}_${dateStr.replace(/\//g, "-")}.pdf`);
@@ -104,30 +119,20 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-// Evenly samples down to maxCount years, always keeping the first and last
-// of the range so the printed table still spans the full picture even
-// though it can't show every single year like the on-screen table can.
-function sampleYearsForPdf(years, maxCount) {
-  if (years.length <= maxCount) return years;
-  const picked = [];
-  for (let i = 0; i < maxCount; i++) {
-    const idx = Math.round((i * (years.length - 1)) / (maxCount - 1));
-    picked.push(years[idx]);
-  }
-  return [...new Set(picked)];
-}
-
 // Client-facing side-by-side comparison PDF — same CJK-safe html2canvas
-// header technique as exportPDF(), plus the comparison chart and a wide
-// table with one column-group per slot (rather than per-year, since the
-// whole point of this export is comparing plans against each other, not
-// showing one plan's own breakdown).
+// header technique as exportPDF(), plus both comparison charts (bar at the
+// 3 typed years, then the supplementary full-range line chart). Per user
+// request, this no longer includes a per-year numbers table — a per-plan
+// name/premium/span block (mirroring the single-plan PDF's own layout)
+// plus the two charts already carries every number that matters, and a
+// wide table was the whole reason this export kept ballooning in length.
 async function exportComparisonPDF() {
-  if (!state.comparisonSlots || state.comparisonSlots.length === 0 || !comparisonChartInstance) return;
+  if (!state.comparisonSlots || state.comparisonSlots.length === 0 || !comparisonChartInstance || !comparisonBarChartInstance) return;
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "landscape" });
   const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 32;
   let y = margin;
 
@@ -140,97 +145,103 @@ async function exportComparisonPDF() {
   }
   const dateStr = new Date().toLocaleDateString();
   const advisorParts = [advisor.name, advisor.phone, advisor.email].filter(Boolean);
-  // The on-screen table can show a whole typed year range (could be dozens
-  // of columns); a fixed-width printable PDF page can't, so cap it to an
-  // evenly-sampled subset (always including the first and last year) —
-  // the chart image below still shows the full range as a continuous line.
-  const compYears = sampleYearsForPdf(getComparisonYears(), 6);
 
-  const rowsHtml = state.comparisonSlots
-    .map((slot) => {
-      const yearCells = compYears
-        .map((target) => {
-          const y2 = nearestYearAtOrBelow(slot.availableYears, target);
-          const r = slot.resultsByYear[y2];
-          const approx = y2 !== target ? "~" : "";
-          return `<td style="padding:5px 8px;border-bottom:1px solid #f0ece4;text-align:right;">${approx}${escapeHtml(formatMoney(r.totalSV))}</td>
-                  <td style="padding:5px 8px;border-bottom:1px solid #f0ece4;text-align:right;">${approx}${escapeHtml(formatPercent(r.irrPercent))}</td>`;
-        })
-        .join("");
-      return `<tr>
-        <td style="padding:5px 8px;border-bottom:1px solid #f0ece4;">${escapeHtml(slot.company)} — ${escapeHtml(slot.planName)}${slot.hasPF ? " (PF)" : ""}</td>
-        <td style="padding:5px 8px;border-bottom:1px solid #f0ece4;">${slot.span === 1 ? escapeHtml(t("yearSingular")) : escapeHtml(t("yearsPlural", slot.span))}</td>
-        <td style="padding:5px 8px;border-bottom:1px solid #f0ece4;text-align:right;">${escapeHtml(formatMoney(slot.netPremium))}</td>
-        ${yearCells}
-        <td style="padding:5px 8px;border-bottom:1px solid #f0ece4;">${slot.breakEvenYear !== null ? escapeHtml(t("yearLabel", slot.breakEvenYear)) : escapeHtml(t("comparisonNoBreakeven"))}</td>
-      </tr>`;
-    })
-    .join("");
-
-  const yearHeaderCells = compYears
-    .map((yr) => `<th colspan="2" style="text-align:center;padding:5px 8px;border-bottom:2px solid #3d3a35;">${escapeHtml(t("yearLabel", yr))}</th>`)
-    .join("");
-  const subHeaderCells = compYears
+  const planDetailsHtml = state.comparisonSlots
     .map(
-      () =>
-        `<th style="text-align:right;padding:0 8px 4px;font-weight:400;color:#b0aa9e;">${escapeHtml(t("colTotalSV"))}</th>
-         <th style="text-align:right;padding:0 8px 4px;font-weight:400;color:#b0aa9e;">${escapeHtml(t("colIRR"))}</th>`
+      (slot) => `
+    <div style="margin-top:14px;">
+      <h2 style="font-size:16px;margin:0 0 6px;">${escapeHtml(slot.company)} — ${escapeHtml(slot.planName)}${slot.hasPF ? " (PF)" : ""}</h2>
+      <div style="font-size:13px;line-height:1.6;">
+        <div>${escapeHtml(t("premiumLabel"))}: ${escapeHtml(formatMoney(slot.grossPremium))}</div>
+        <div>${escapeHtml(t("spanLabel"))}: ${escapeHtml(slot.span === 1 ? t("yearSingular") : t("yearsPlural", slot.span))}</div>
+      </div>
+    </div>`
     )
     .join("");
 
-  const disclaimers = [...new Set(state.comparisonSlots.map((s) => PLANS[s.planId].disclaimer).filter(Boolean))];
-
-  const container = document.createElement("div");
-  container.style.cssText =
-    "position:absolute;left:-9999px;top:0;width:1120px;padding:24px;background:#ffffff;" +
+  const headerContainer = document.createElement("div");
+  headerContainer.style.cssText =
+    "position:absolute;left:-9999px;top:0;width:760px;padding:24px;background:#ffffff;" +
     "font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang HK','Microsoft YaHei',Roboto,sans-serif;color:#3d3a35;";
-  container.innerHTML = `
+  headerContainer.innerHTML = `
     <h1 style="font-size:22px;margin:0 0 12px;">${escapeHtml(t("comparisonCardTitle"))}</h1>
     <div style="font-size:13px;line-height:1.6;">
       <div>${escapeHtml(t("pdfDate"))}: ${escapeHtml(dateStr)}</div>
       ${clientName ? `<div>${escapeHtml(t("pdfClient"))}: ${escapeHtml(clientName)}</div>` : ""}
       ${advisorParts.length ? `<div>${escapeHtml(t("pdfAdvisor"))}: ${escapeHtml(advisorParts.join(" / "))}</div>` : ""}
     </div>
-    <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:12px;">
-      <thead>
-        <tr>
-          <th rowspan="2" style="text-align:left;padding:5px 8px;border-bottom:2px solid #3d3a35;vertical-align:bottom;">${escapeHtml(t("colPlan"))}</th>
-          <th rowspan="2" style="text-align:left;padding:5px 8px;border-bottom:2px solid #3d3a35;vertical-align:bottom;">${escapeHtml(t("spanLabel"))}</th>
-          <th rowspan="2" style="text-align:right;padding:5px 8px;border-bottom:2px solid #3d3a35;vertical-align:bottom;">${escapeHtml(t("colNetPremium"))}</th>
-          ${yearHeaderCells}
-          <th rowspan="2" style="text-align:left;padding:5px 8px;border-bottom:2px solid #3d3a35;vertical-align:bottom;">${escapeHtml(t("colBreakeven"))}</th>
-        </tr>
-        <tr>${subHeaderCells}</tr>
-      </thead>
-      <tbody>${rowsHtml}</tbody>
-    </table>
-    ${
-      disclaimers.length
-        ? `<div style="font-size:8px;color:#b0aa9e;margin-top:16px;">
-             <strong>${escapeHtml(t("pdfDisclaimerTitle"))}:</strong> ${disclaimers.map(escapeHtml).join(" ")}
-           </div>`
-        : ""
-    }
+    ${planDetailsHtml}
   `;
-  document.body.appendChild(container);
-
+  document.body.appendChild(headerContainer);
   let headerHeight;
   try {
-    const headerCanvas = await html2canvas(container, { scale: 2, backgroundColor: "#ffffff" });
+    const headerCanvas = await html2canvas(headerContainer, { scale: 2, backgroundColor: "#ffffff" });
     const headerImgData = headerCanvas.toDataURL("image/jpeg", 0.92);
     const headerWidth = pageWidth - margin * 2;
     headerHeight = headerWidth * (headerCanvas.height / headerCanvas.width);
     doc.addImage(headerImgData, "JPEG", margin, y, headerWidth, headerHeight);
   } finally {
-    document.body.removeChild(container);
+    document.body.removeChild(headerContainer);
   }
   y += headerHeight + 16;
 
+  // Bar chart — the primary comparison output, at exactly the 3 typed years
+  // (same as the on-screen layout).
+  if (y + 200 > pageHeight - margin) {
+    doc.addPage();
+    y = margin;
+  }
+  comparisonBarChartInstance.resize();
+  const barImgData = comparisonBarChartInstance.toBase64Image("image/jpeg", 0.92);
+  const barImgWidth = pageWidth - margin * 2;
+  const barImgHeight = barImgWidth * (comparisonBarChartInstance.height / comparisonBarChartInstance.width);
+  doc.addImage(barImgData, "JPEG", margin, y, barImgWidth, barImgHeight);
+  y += barImgHeight + 16;
+
+  // Supplementary line chart below it, covering the full year-0-to-max range.
+  if (y + 200 > pageHeight - margin) {
+    doc.addPage();
+    y = margin;
+  }
   comparisonChartInstance.resize();
-  const imgData = comparisonChartInstance.toBase64Image("image/jpeg", 0.92);
-  const imgWidth = pageWidth - margin * 2;
-  const imgHeight = imgWidth * (comparisonChartInstance.height / comparisonChartInstance.width);
-  doc.addImage(imgData, "JPEG", margin, y, imgWidth, imgHeight);
+  const lineImgData = comparisonChartInstance.toBase64Image("image/jpeg", 0.92);
+  const lineImgWidth = pageWidth - margin * 2;
+  const lineImgHeight = lineImgWidth * (comparisonChartInstance.height / comparisonChartInstance.width);
+  doc.addImage(lineImgData, "JPEG", margin, y, lineImgWidth, lineImgHeight);
+  y += lineImgHeight + 16;
+
+  const disclaimers = [...new Set(state.comparisonSlots.map((s) => PLANS[s.planId].disclaimer).filter(Boolean))];
+  const anyEstimated = state.comparisonSlots.some((s) => Object.values(s.resultsByYear).some((r) => r.isEstimated));
+  if (disclaimers.length || anyEstimated) {
+    const disclaimerContainer = document.createElement("div");
+    disclaimerContainer.style.cssText =
+      "position:absolute;left:-9999px;top:0;width:760px;padding:24px;background:#ffffff;" +
+      "font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang HK','Microsoft YaHei',Roboto,sans-serif;color:#3d3a35;";
+    disclaimerContainer.innerHTML = `
+      ${anyEstimated ? `<div style="font-size:9px;color:#b0aa9e;margin-bottom:8px;">${escapeHtml(t("comparisonChartNote"))}</div>` : ""}
+      ${
+        disclaimers.length
+          ? `<div style="font-size:9px;color:#b0aa9e;">
+               <strong>${escapeHtml(t("pdfDisclaimerTitle"))}:</strong> ${disclaimers.map(escapeHtml).join(" ")}
+             </div>`
+          : ""
+      }
+    `;
+    document.body.appendChild(disclaimerContainer);
+    try {
+      const disclaimerCanvas = await html2canvas(disclaimerContainer, { scale: 2, backgroundColor: "#ffffff" });
+      const disclaimerImgData = disclaimerCanvas.toDataURL("image/jpeg", 0.92);
+      const disclaimerWidth = pageWidth - margin * 2;
+      const disclaimerHeight = disclaimerWidth * (disclaimerCanvas.height / disclaimerCanvas.width);
+      if (y + disclaimerHeight > pageHeight - margin) {
+        doc.addPage();
+        y = margin;
+      }
+      doc.addImage(disclaimerImgData, "JPEG", margin, y, disclaimerWidth, disclaimerHeight);
+    } finally {
+      document.body.removeChild(disclaimerContainer);
+    }
+  }
 
   const filenameBase = (clientName || "comparison").replace(/[^a-zA-Z0-9一-鿿]+/g, "_");
   doc.save(`${filenameBase}_comparison_${dateStr.replace(/\//g, "-")}.pdf`);

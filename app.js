@@ -10,7 +10,7 @@
 
 const STORAGE_KEY = "savingsAppState";
 const ADVISOR_STORAGE_KEY = "savingsAppAdvisor";
-const PF_PRESET_STORAGE_KEY = "savingsAppPfPresets";
+const PF_RECENT_STORAGE_KEY = "savingsAppPfRecent";
 
 const state = {
   grossPremium: 1000000,
@@ -23,6 +23,10 @@ const state = {
   pfLoanRatePercent: 2.5,
   pfStressRatePercent: null,
   chartYears: [null, null, null],
+  // Optional "what if I just banked this instead" reference rate — shared
+  // across the single-plan line chart AND the comparison line chart (one
+  // input, applies everywhere a full-range line chart is shown).
+  bankRatePercent: null,
   // Advisor-entered per-year discount rates (0-1, index 0 = year 1),
   // length === paymentSpan. Discount/LTV data is unreliable across most
   // plans (few insurers actually confirm it in writing), so both are
@@ -34,8 +38,8 @@ const state = {
   // Snapshots added via "Add to Comparison" — not persisted to localStorage
   // (session-only), since these are meant for a single side-by-side
   // discussion with a client, not a saved artifact. See addToComparison().
-  // Comparison years are a manually-typed range (#comparison-year-from/to
-  // in the DOM), not tracked in state — see readComparisonYearRange().
+  // Comparison years are 3 manually-typed policy years (#comparison-year-1/
+  // 2/3 in the DOM), not tracked in state — see readComparisonYears().
   comparisonSlots: [],
 };
 
@@ -101,6 +105,12 @@ function formatPercent(n) {
   return n === null || n === undefined ? "—" : n.toFixed(2) + "%";
 }
 
+// All plans in this app are currently USD, but this keeps the axis label
+// driven by the actual plan data instead of a hardcoded string.
+function currencyLabel(code) {
+  return code === "USD" ? t("currencyUSD") : code;
+}
+
 function applyTranslations() {
   document.querySelectorAll("[data-i18n]").forEach((el) => {
     el.textContent = t(el.dataset.i18n);
@@ -122,16 +132,18 @@ function switchLang(lang) {
   populateSpanSelect();
   populatePFModeSelect();
   populateDiscountOverrideInputs();
-  populatePfPresetSelect();
+  renderPfRecentRow();
   if (lastResults) {
     renderResultsTable(lastResults, lastPFResults);
     renderSummary(lastPFResults);
     populateChartYearSelects();
     renderChart(lastResults, lastPFResults);
+    renderPlanLineChart(lastResults, lastPFResults);
   }
   if (state.comparisonSlots.length > 0) {
-    populateComparisonYearRange();
+    populateComparisonYears();
     renderComparisonTable();
+    renderComparisonBarChart();
     renderComparisonChart();
   }
 }
@@ -367,10 +379,13 @@ function renderResultsTable(results, pfResults) {
   pfCols.forEach((th) => (th.hidden = !pfResults));
 
   const rows = pfResults || results;
+  let anyEstimated = false;
   for (const row of rows) {
+    if (row.isEstimated) anyEstimated = true;
     const tr = document.createElement("tr");
+    if (row.isEstimated) tr.className = "estimated-row";
     let html = `
-      <td>${row.year}</td>
+      <td>${row.year}${row.isEstimated ? ` <span class="estimated-tag">${t("estimatedTag")}</span>` : ""}</td>
       <td>${formatMoney(row.guaranteedCV)}</td>
       <td>${formatMoney(row.accumulatedDiv)}</td>
       <td>${formatMoney(row.terminalDiv)}</td>
@@ -390,6 +405,10 @@ function renderResultsTable(results, pfResults) {
     tbody.appendChild(tr);
   }
   document.getElementById("results").hidden = false;
+
+  const estimatedNote = document.getElementById("results-estimated-note");
+  estimatedNote.textContent = anyEstimated ? t("estimatedRowsNote") : "";
+  estimatedNote.hidden = !anyEstimated;
 
   // disclaimer is product-level (not span-specific), so plain PLANS lookup is fine.
   const plan = PLANS[state.selectedPlanId];
@@ -471,7 +490,8 @@ function renderStressTable(baseResults, stressResults) {
 
 function populateChartYearSelects() {
   const plan = getCurrentPlan();
-  const years = Object.keys(plan.returnTable).map(Number).sort((a, b) => a - b);
+  const expandedTable = expandReturnTableWithEstimates(plan.returnTable);
+  const years = Object.keys(expandedTable).map(Number).sort((a, b) => a - b);
   const defaults = plan.defaultCompareYears || years.slice(0, 3);
 
   ["chart-year-1", "chart-year-2", "chart-year-3"].forEach((id, i) => {
@@ -480,7 +500,7 @@ function populateChartYearSelects() {
     for (const year of years) {
       const opt = document.createElement("option");
       opt.value = year;
-      opt.textContent = t("yearLabel", year);
+      opt.textContent = expandedTable[year].isEstimated ? `${t("yearLabel", year)} (${t("estimatedTag")})` : t("yearLabel", year);
       select.appendChild(opt);
     }
     const chosen = state.chartYears[i] && years.includes(state.chartYears[i]) ? state.chartYears[i] : defaults[i] || years[0];
@@ -528,8 +548,14 @@ function renderChart(results, pfResults) {
   const year0Principal = byYearPF ? byYearPF[chartYears[0]].selfPayAmount : netPremium;
   const year0Loan = byYearPF ? byYearPF[chartYears[0]].loanAmount : 0;
 
-  const labels = [t("yearLabel", 0), ...chartYears.map((y) => t("yearLabel", y))];
   const rows = [null, ...chartYears.map((y) => (byYearPF ? byYearPF[y] : byYear[y]))];
+  const labels = [
+    t("yearLabel", 0),
+    ...chartYears.map((y, i) => {
+      const row = rows[i + 1];
+      return row && row.isEstimated ? `${t("yearLabel", y)} (${t("estimatedTag")})` : t("yearLabel", y);
+    }),
+  ];
   const segments = [
     { principal: year0Principal, loan: year0Loan, discount: discountAmount, interest: 0, returnAboveCost: 0 },
     ...chartYears.map((y) => {
@@ -585,14 +611,31 @@ function renderChart(results, pfResults) {
       responsive: true,
       maintainAspectRatio: false,
       scales: {
-        x: { stacked: true },
-        y: { stacked: true, ticks: { callback: (v) => formatMoney(v) } },
+        x: {
+          stacked: true,
+          // The axis title already says "Policy Year" — repeating "Year"
+          // on every single tick (Year 0, Year 10, Year 20...) is noise, so
+          // ticks show the bare number. labels/datasets are left as "Year
+          // N" since those still feed the caption list and tooltips, where
+          // the word is useful context.
+          ticks: { callback: function (value) { return this.getLabelForValue(value).replace(/\D/g, ""); } },
+          title: { display: true, text: t("chartAxisYear") },
+        },
+        y: {
+          stacked: true,
+          ticks: { callback: (v) => formatMoney(v) },
+          title: { display: true, text: t("chartAxisValue", currencyLabel(plan.currency)) },
+        },
       },
       plugins: {
         tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatMoney(ctx.parsed.y)}` } },
         datalabels: {
           formatter: (value) => (value > 0 ? formatMoney(value) : ""),
-          display: (ctx) => ctx.dataset.data[ctx.dataIndex] > labelThreshold,
+          // "auto" (not just true/false) tells the datalabels plugin to hide
+          // whichever of these labels would otherwise visually overlap —
+          // segments in a stacked bar can end up close together in height,
+          // which was causing numbers to render on top of each other.
+          display: (ctx) => (ctx.dataset.data[ctx.dataIndex] > labelThreshold ? "auto" : false),
           font: { size: 10 },
         },
       },
@@ -600,6 +643,104 @@ function renderChart(results, pfResults) {
   });
 
   renderChartCaption(segments, labels, rows, !!byYearPF);
+}
+
+let planLineChartInstance = null;
+
+// Full-range line chart (year 0 to the plan's own last policy year) showing
+// how Total SV grows over time — the bar chart above only shows 3 chosen
+// snapshot years, this fills in the trajectory between them. Same
+// dashed-segment/hollow-point treatment for interpolated (isEstimated)
+// years as the comparison line chart, plus an optional "Bank Rate" overlay
+// (see calculateBankLine in calculator.js) when the advisor has entered a
+// bank savings rate to compare against.
+function renderPlanLineChart(results, pfResults) {
+  const plan = getCurrentPlan();
+  const rows = pfResults || results;
+  const maxYear = Math.max(...rows.map((r) => r.year));
+
+  const planPoints = rows.map((r) => ({ x: r.year, y: r.totalSV, isEstimated: r.isEstimated }));
+  const datasets = [
+    {
+      label: `${plan.company} ${plan.name}`,
+      data: planPoints,
+      borderColor: "#e08a72",
+      backgroundColor: "#e08a72",
+      borderWidth: 2.5,
+      pointRadius: (ctx) => (ctx.raw && ctx.raw.isEstimated ? 2 : 3),
+      pointHoverRadius: 5,
+      pointBackgroundColor: (ctx) => (ctx.raw && ctx.raw.isEstimated ? "#ffffff" : "#e08a72"),
+      pointBorderColor: "#e08a72",
+      segment: { borderDash: (ctx) => (ctx.p0.raw.isEstimated || ctx.p1.raw.isEstimated ? [5, 4] : undefined) },
+      tension: 0.15,
+      fill: false,
+      datalabels: {
+        color: "#e08a72",
+        display: (ctx) => (ctx.dataIndex === ctx.dataset.data.length - 1 ? "auto" : false),
+        formatter: (value) => (value.isEstimated ? `${formatMoney(value.y)}*` : formatMoney(value.y)),
+        align: "right",
+        anchor: "end",
+        font: { size: 10, weight: "600" },
+      },
+    },
+  ];
+
+  if (state.bankRatePercent !== null) {
+    const netPremiumPerYear = applyDiscounts(state.grossPremium, state.paymentSpan, plan, state.discountOverridePercents);
+    const years = rows.map((r) => r.year);
+    const bankValues = calculateBankLine(netPremiumPerYear, state.paymentSpan, state.bankRatePercent / 100, years);
+    datasets.push({
+      label: t("bankRateLegend", state.bankRatePercent),
+      data: years.map((y) => ({ x: y, y: bankValues[y] })),
+      borderColor: "#8a8578",
+      backgroundColor: "#8a8578",
+      borderWidth: 2,
+      borderDash: [3, 3],
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      tension: 0,
+      fill: false,
+      datalabels: { display: false },
+    });
+  }
+
+  if (planLineChartInstance) planLineChartInstance.destroy();
+  const container = document.querySelector("#results-line-chart").closest(".chart-container");
+  container.hidden = false;
+  void container.offsetWidth; // forces synchronous reflow — see renderChart()'s comment on the same pattern
+  const ctx = document.getElementById("results-line-chart").getContext("2d");
+  planLineChartInstance = new Chart(ctx, {
+    type: "line",
+    data: { datasets },
+    plugins: [ChartDataLabels, chartWhiteBackgroundPlugin],
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { right: 64 } },
+      scales: {
+        x: {
+          type: "linear",
+          min: 0,
+          max: maxYear,
+          ticks: { precision: 0 },
+          title: { display: true, text: t("chartAxisYear") },
+        },
+        y: {
+          ticks: { callback: (v) => formatMoney(v) },
+          title: { display: true, text: t("chartAxisValue", currencyLabel(plan.currency)) },
+        },
+      },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: (ctx) =>
+              `${ctx.dataset.label}: ${formatMoney(ctx.parsed.y)}${ctx.raw && ctx.raw.isEstimated ? ` (${t("estimatedTag")})` : ""}`,
+          },
+        },
+        datalabels: {},
+      },
+    },
+  });
 }
 
 // Matches PortfoPlus's own definition: 回報% = 回報 ÷ 本金 (return as a % of
@@ -636,6 +777,7 @@ function renderChartCaption(segments, labels, rows, hasPF) {
 // single-plan inputs afterward doesn't retroactively change an
 // already-added comparison row.
 let comparisonChartInstance = null;
+let comparisonBarChartInstance = null;
 
 function addToComparison() {
   if (!lastResults) return;
@@ -662,6 +804,7 @@ function addToComparison() {
     resultsByYear[row.year] = {
       totalSV: row.totalSV,
       irrPercent: lastPFResults ? row.irrWithPFPercent : row.irrPercent,
+      isEstimated: row.isEstimated,
     };
   }
 
@@ -687,6 +830,7 @@ function addToComparison() {
     span: state.paymentSpan,
     grossPremium: state.grossPremium,
     netPremium,
+    netPremiumPerYear: netPerYear,
     resultsByYear,
     availableYears: years,
     breakEvenYear,
@@ -696,8 +840,9 @@ function addToComparison() {
   state.comparisonSlots.push(slot);
   if (state.comparisonSlots.length > 3) state.comparisonSlots.shift(); // FIFO cap at 3
   document.getElementById("comparison-card").hidden = false;
-  populateComparisonYearRange();
+  populateComparisonYears();
   renderComparisonTable();
+  renderComparisonBarChart();
   renderComparisonChart();
 }
 
@@ -707,180 +852,224 @@ function removeComparisonSlot(id) {
     document.getElementById("comparison-card").hidden = true;
     return;
   }
-  populateComparisonYearRange();
+  populateComparisonYears();
   renderComparisonTable();
+  renderComparisonBarChart();
   renderComparisonChart();
 }
 
-// Different plans/spans rarely share the exact same set of policy years
-// (some are sparse-milestone tables, some are dense 1-40/1-70) — this finds
-// the closest year at-or-below a target so every slot can still be shown
-// against a common set of comparison years, flagged with "~" when it's not
-// an exact match rather than silently presenting an approximation as exact.
-function nearestYearAtOrBelow(availableYears, target) {
-  let best = null;
-  for (const y of availableYears) {
-    if (y <= target && (best === null || y > best)) best = y;
-  }
-  return best !== null ? best : availableYears[0];
+// The comparison years are 3 explicit, advisor-typed policy years (like the
+// single-plan chart's Year A/B/C) rather than a From/To range — a typed
+// range could span dozens of disclosed years across different plans, which
+// made both the bar/line charts and the exported PDF table unreadably wide.
+// Returns them sorted ascending, deduped, empty entries dropped.
+function readComparisonYears() {
+  const raw = ["comparison-year-1", "comparison-year-2", "comparison-year-3"]
+    .map((id) => document.getElementById(id).value)
+    .filter((v) => v !== "")
+    .map(Number);
+  return [...new Set(raw)].sort((a, b) => a - b);
 }
 
-function readComparisonYearRange() {
-  const from = Number(document.getElementById("comparison-year-from").value) || 1;
-  const to = Number(document.getElementById("comparison-year-to").value) || from;
-  return [Math.min(from, to), Math.max(from, to)];
-}
-
-// The comparison years are now a manually-typed range (not a 3-point picker)
-// so the table/chart can show the full progression across years, not just
-// 3 arbitrary snapshots — the union of every year that exists in ANY added
-// slot's own data, filtered to the typed range.
-function getComparisonYears() {
-  const [from, to] = readComparisonYearRange();
-  const allYears = new Set();
-  state.comparisonSlots.forEach((s) =>
-    s.availableYears.forEach((y) => {
-      if (y >= from && y <= to) allYears.add(y);
-    })
-  );
-  return [...allYears].sort((a, b) => a - b);
-}
-
-// Only fills in a default From/To the first time (fields still empty) —
-// once the advisor has typed a range, later Add/Remove doesn't clobber it.
-function populateComparisonYearRange() {
+// Only fills in defaults the first time (fields still empty) — once the
+// advisor has typed years, later Add/Remove doesn't clobber them. Picks the
+// first, middle, and last year from the union of every added slot's own
+// disclosed years, so the defaults are always real data points somewhere.
+function populateComparisonYears() {
   const allYears = new Set();
   state.comparisonSlots.forEach((s) => s.availableYears.forEach((y) => allYears.add(y)));
   const years = [...allYears].sort((a, b) => a - b);
   if (years.length === 0) return;
-  const fromInput = document.getElementById("comparison-year-from");
-  const toInput = document.getElementById("comparison-year-to");
-  if (!fromInput.value) fromInput.value = years[0];
-  if (!toInput.value) toInput.value = years[years.length - 1];
+  const ids = ["comparison-year-1", "comparison-year-2", "comparison-year-3"];
+  const defaults = [years[0], years[Math.floor((years.length - 1) / 2)], years[years.length - 1]];
+  ids.forEach((id, i) => {
+    const input = document.getElementById(id);
+    if (!input.value) input.value = defaults[i];
+  });
 }
 
+// Deliberately minimal — just the plan name and a Remove button. The actual
+// year-by-year numbers live in the chart (which has room to show the whole
+// typed range without needing to scroll) and the plain-language delta note
+// below it; a wide per-year table here just made "Remove" hard to reach.
 function renderComparisonTable() {
-  const years = getComparisonYears();
   const thead = document.querySelector("#comparison-table thead");
   const tbody = document.querySelector("#comparison-table tbody");
 
   thead.innerHTML = `
     <tr>
-      <th rowspan="2">${t("colPlan")}</th>
-      <th rowspan="2">${t("spanLabel")}</th>
-      <th rowspan="2">${t("colNetPremium")}</th>
-      ${years.map((y) => `<th class="comparison-year-col" colspan="2">${t("yearLabel", y)}</th>`).join("")}
-      <th rowspan="2">${t("colBreakeven")}</th>
-      <th rowspan="2"></th>
-    </tr>
-    <tr>
-      ${years.map(() => `<th class="comparison-year-col">${t("colTotalSV")}</th><th>${t("colIRR")}</th>`).join("")}
+      <th>${t("colPlan")}</th>
+      <th></th>
     </tr>
   `;
-
-  // Highlights the highest Total SV per year-column across the added slots
-  // — the quickest way to answer "which plan is ahead at year N" at a glance.
-  const bestPerYear = {};
-  for (const target of years) {
-    let best = -Infinity;
-    for (const slot of state.comparisonSlots) {
-      const y = nearestYearAtOrBelow(slot.availableYears, target);
-      best = Math.max(best, slot.resultsByYear[y].totalSV);
-    }
-    bestPerYear[target] = best;
-  }
 
   tbody.innerHTML = "";
   for (const slot of state.comparisonSlots) {
     const tr = document.createElement("tr");
-    let html = `
+    tr.innerHTML = `
       <td>${slot.company} — ${slot.planName}${slot.hasPF ? " (PF)" : ""}</td>
-      <td>${slot.span === 1 ? t("yearSingular") : t("yearsPlural", slot.span)}</td>
-      <td>${formatMoney(slot.netPremium)}</td>
-    `;
-    for (const target of years) {
-      const y = nearestYearAtOrBelow(slot.availableYears, target);
-      const r = slot.resultsByYear[y];
-      const approx = y !== target ? "~" : "";
-      const isBest = state.comparisonSlots.length > 1 && r.totalSV === bestPerYear[target];
-      html += `<td class="${isBest ? "comparison-best-cell" : ""}">${approx}${formatMoney(r.totalSV)}${isBest ? ` <span class="comparison-best-badge">${t("comparisonBestBadge")}</span>` : ""}</td><td>${approx}${formatPercent(r.irrPercent)}</td>`;
-    }
-    html += `
-      <td>${slot.breakEvenYear !== null ? t("yearLabel", slot.breakEvenYear) : t("comparisonNoBreakeven")}</td>
       <td><button class="comparison-remove-btn" type="button" data-id="${slot.id}">${t("comparisonRemoveBtn")}</button></td>
     `;
-    tr.innerHTML = html;
     tbody.appendChild(tr);
   }
 
   tbody.querySelectorAll(".comparison-remove-btn").forEach((btn) => {
     btn.addEventListener("click", () => removeComparisonSlot(Number(btn.dataset.id)));
   });
-
-  renderComparisonDelta(years);
 }
 
-// A one-line, plain-language summary of the gap between the leading plan
-// and the next best at the end of the chosen range — the "so what" that a
-// wide table of numbers doesn't say out loud on its own.
-function renderComparisonDelta(years) {
-  const note = document.getElementById("comparison-delta-note");
-  if (state.comparisonSlots.length < 2 || years.length === 0) {
-    note.textContent = "";
-    return;
-  }
-  const lastYear = years[years.length - 1];
-  const ranked = state.comparisonSlots
-    .map((slot) => {
-      const y = nearestYearAtOrBelow(slot.availableYears, lastYear);
-      return { slot, value: slot.resultsByYear[y].totalSV };
-    })
-    .sort((a, b) => b.value - a.value);
-  const [best, second] = ranked;
-  const diff = best.value - second.value;
-  const pct = second.value > 0 ? (diff / second.value) * 100 : 0;
-  note.textContent = t(
-    "comparisonDeltaText",
-    t("yearLabel", lastYear),
-    `${best.slot.company} ${best.slot.planName}`,
-    formatMoney(diff),
-    pct.toFixed(1),
-    `${second.slot.company} ${second.slot.planName}`
-  );
-}
-
-function renderComparisonChart() {
-  const years = getComparisonYears();
-  const labels = years.map((y) => t("yearLabel", y));
+// Primary comparison output: a grouped bar chart at exactly the 3 typed
+// policy years (same idea as the single-plan chart's Year A/B/C picker) —
+// easier to read bar-to-bar at a handful of specific years than a dense
+// multi-year table, which is what made both the on-screen table and the
+// exported PDF unreadably wide before. If a slot doesn't disclose one of
+// the 3 chosen years exactly, it just has no bar in that group (see
+// comparisonChartNote below) rather than an approximated one.
+function renderComparisonBarChart() {
+  const years = readComparisonYears();
+  const labels = years.map(String);
   const colors = ["#e08a72", "#8aa8c2", "#8fbfa8"];
 
-  // Line chart, not grouped bars — with a range of years now typed manually
-  // instead of 3 fixed points, a line makes the progression across years
-  // (and where trajectories cross) legible at a glance; a datalabel on just
-  // the last point per line puts the actual number on the chart itself
-  // instead of requiring a hover to find out what a bar's height means.
+  // Interpolated (isEstimated) years render as a lighter/hatched bar and get
+  // an asterisk in the datalabel — visually distinct from real, sourced
+  // years at a glance, per the "never present an estimate as if it were a
+  // proposal figure" rule (see expandReturnTableWithEstimates in calculator.js).
   const datasets = state.comparisonSlots.map((slot, i) => ({
     label: `${slot.company} ${slot.planName}`,
-    data: years.map((target) => {
-      const y = nearestYearAtOrBelow(slot.availableYears, target);
-      return slot.resultsByYear[y].totalSV;
-    }),
-    borderColor: colors[i % colors.length],
-    backgroundColor: colors[i % colors.length],
-    borderWidth: 2.5,
-    pointRadius: 3,
-    pointHoverRadius: 5,
-    tension: 0.15,
-    fill: false,
+    data: years.map((y) => (slot.resultsByYear[y] ? slot.resultsByYear[y].totalSV : null)),
+    backgroundColor: years.map((y) =>
+      slot.resultsByYear[y] && slot.resultsByYear[y].isEstimated ? `${colors[i % colors.length]}66` : colors[i % colors.length]
+    ),
+    borderRadius: 4,
     datalabels: {
       color: colors[i % colors.length],
-      display: (ctx) => ctx.dataIndex === ctx.dataset.data.length - 1,
-      formatter: (value) => formatMoney(value),
-      align: "right",
+      formatter: (value, ctx) => {
+        if (value === null) return "";
+        const y = years[ctx.dataIndex];
+        const estimated = slot.resultsByYear[y] && slot.resultsByYear[y].isEstimated;
+        return estimated ? `${formatMoney(value)}*` : formatMoney(value);
+      },
       anchor: "end",
+      align: "end",
+      // "auto" hides whichever label would otherwise overlap a neighbor —
+      // adjacent bars with close values were rendering numbers on top of
+      // each other.
+      display: (ctx) => (ctx.dataset.data[ctx.dataIndex] === null ? false : "auto"),
       font: { size: 10, weight: "600" },
     },
   }));
+
+  if (comparisonBarChartInstance) comparisonBarChartInstance.destroy();
+  const card = document.getElementById("comparison-card");
+  card.hidden = false;
+  void card.offsetWidth; // forces synchronous reflow — see renderChart()'s comment on the same pattern
+  const ctx = document.getElementById("comparison-bar-chart").getContext("2d");
+  comparisonBarChartInstance = new Chart(ctx, {
+    type: "bar",
+    data: { labels, datasets },
+    plugins: [ChartDataLabels, chartWhiteBackgroundPlugin],
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { title: { display: true, text: t("chartAxisYear") } },
+        y: {
+          ticks: { callback: (v) => formatMoney(v) },
+          title: { display: true, text: t("chartAxisValue", currencyLabel(PLANS[state.comparisonSlots[0].planId].currency)) },
+        },
+      },
+      plugins: {
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              if (ctx.parsed.y === null) return `${ctx.dataset.label}: —`;
+              const y = years[ctx.dataIndex];
+              const slot = state.comparisonSlots[ctx.datasetIndex];
+              const estimated = slot.resultsByYear[y] && slot.resultsByYear[y].isEstimated;
+              return `${ctx.dataset.label}: ${formatMoney(ctx.parsed.y)}${estimated ? ` (${t("estimatedTag")})` : ""}`;
+            },
+          },
+        },
+        datalabels: {},
+      },
+    },
+  });
+}
+
+// Supplementary line chart below the bar chart, covering the full range
+// from year 0 to the largest of the 3 typed years (not just those 3 points)
+// so the overall growth trajectory is still visible. Each line only plots
+// the policy years THAT SPECIFIC PLAN actually discloses (its own
+// returnTable years) — not a shared/union set of years filled in via
+// approximation. A milestone-only proposal's line will visibly stop at its
+// last disclosed year (e.g. AXA at year 30) rather than continuing flat
+// forever, and won't show a point in the middle of a gap between milestones
+// either. Uses a linear x-axis (not category) specifically so each dataset
+// can carry its own real {x: year, y: value} points independent of others.
+function renderComparisonChart() {
+  const years = readComparisonYears();
+  const maxYear = years.length ? Math.max(...years) : 1;
+  const colors = ["#e08a72", "#8aa8c2", "#8fbfa8"];
+
+  // Gap years between an insurer's disclosed milestones are now filled with
+  // a linear-interpolated estimate (see expandReturnTableWithEstimates in
+  // calculator.js) rather than left empty — but the line must still show
+  // which stretches are real vs. estimated: dashed for any segment touching
+  // an estimated point, solid otherwise, plus smaller/hollow points on
+  // estimated years so they don't read as equally confident data.
+  const datasets = state.comparisonSlots.map((slot, i) => {
+    const points = slot.availableYears.filter((y) => y <= maxYear).map((y) => ({ x: y, y: slot.resultsByYear[y].totalSV, isEstimated: slot.resultsByYear[y].isEstimated }));
+    return {
+      label: `${slot.company} ${slot.planName}`,
+      data: points,
+      borderColor: colors[i % colors.length],
+      backgroundColor: colors[i % colors.length],
+      borderWidth: 2.5,
+      pointRadius: (ctx) => (ctx.raw && ctx.raw.isEstimated ? 2 : 3),
+      pointHoverRadius: 5,
+      pointBackgroundColor: (ctx) => (ctx.raw && ctx.raw.isEstimated ? "#ffffff" : colors[i % colors.length]),
+      pointBorderColor: colors[i % colors.length],
+      segment: {
+        borderDash: (ctx) => (ctx.p0.raw.isEstimated || ctx.p1.raw.isEstimated ? [5, 4] : undefined),
+      },
+      tension: 0.15,
+      fill: false,
+      datalabels: {
+        color: colors[i % colors.length],
+        display: (ctx) => (ctx.dataIndex === ctx.dataset.data.length - 1 ? "auto" : false),
+        formatter: (value) => (value.isEstimated ? `${formatMoney(value.y)}*` : formatMoney(value.y)),
+        align: "right",
+        anchor: "end",
+        font: { size: 10, weight: "600" },
+      },
+    };
+  });
+
+  // One "Bank Rate" reference line per slot (not just one for the whole
+  // chart) — different slots can carry different premiums/spans, so a
+  // single universal bank line couldn't fairly represent all of them at
+  // once. All rendered in the same neutral gray/dashed style so they read
+  // as one visual "what if you'd just banked it" band, distinct from the
+  // colored actual-plan lines, while still being per-plan accurate.
+  if (state.bankRatePercent !== null) {
+    state.comparisonSlots.forEach((slot) => {
+      const slotYears = slot.availableYears.filter((y) => y <= maxYear);
+      const bankValues = calculateBankLine(slot.netPremiumPerYear, slot.span, state.bankRatePercent / 100, slotYears);
+      datasets.push({
+        label: t("bankRateLegendFor", state.bankRatePercent, slot.planName),
+        data: slotYears.map((y) => ({ x: y, y: bankValues[y] })),
+        borderColor: "#8a8578",
+        backgroundColor: "#8a8578",
+        borderWidth: 1.5,
+        borderDash: [3, 3],
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        tension: 0,
+        fill: false,
+        datalabels: { display: false },
+      });
+    });
+  }
 
   if (comparisonChartInstance) comparisonChartInstance.destroy();
   const card = document.getElementById("comparison-card");
@@ -889,15 +1078,32 @@ function renderComparisonChart() {
   const ctx = document.getElementById("comparison-chart").getContext("2d");
   comparisonChartInstance = new Chart(ctx, {
     type: "line",
-    data: { labels, datasets },
+    data: { datasets },
     plugins: [ChartDataLabels, chartWhiteBackgroundPlugin],
     options: {
       responsive: true,
       maintainAspectRatio: false,
       layout: { padding: { right: 64 } },
-      scales: { y: { ticks: { callback: (v) => formatMoney(v) } } },
+      scales: {
+        x: {
+          type: "linear",
+          min: 0,
+          max: maxYear,
+          ticks: { precision: 0 },
+          title: { display: true, text: t("chartAxisYear") },
+        },
+        y: {
+          ticks: { callback: (v) => formatMoney(v) },
+          title: { display: true, text: t("chartAxisValue", currencyLabel(PLANS[state.comparisonSlots[0].planId].currency)) },
+        },
+      },
       plugins: {
-        tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatMoney(ctx.parsed.y)}` } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) =>
+              `${ctx.dataset.label}: ${formatMoney(ctx.parsed.y)}${ctx.raw && ctx.raw.isEstimated ? ` (${t("estimatedTag")})` : ""}`,
+          },
+        },
         datalabels: {},
       },
     },
@@ -913,6 +1119,7 @@ function calculate() {
   const pfLtvInput = document.getElementById("pf-ltv");
   const pfRateInput = document.getElementById("pf-rate");
   const pfStressInput = document.getElementById("pf-stress-rate");
+  const bankRateInput = document.getElementById("bank-rate");
 
   state.grossPremium = Number(premiumInput.value) || 0;
   state.paymentSpan = Number(spanSelect.value);
@@ -922,6 +1129,7 @@ function calculate() {
   state.pfLtvPercent = pfLtvInput.value ? Number(pfLtvInput.value) : null;
   state.pfLoanRatePercent = Number(pfRateInput.value) || 0;
   state.pfStressRatePercent = pfStressInput.value ? Number(pfStressInput.value) : null;
+  state.bankRatePercent = bankRateInput.value ? Number(bankRateInput.value) : null;
   state.discountOverridePercents = readDiscountOverridePercents();
   saveState();
 
@@ -948,11 +1156,17 @@ function calculate() {
   lastResults = results;
   lastPFResults = pfResults;
 
+  if (state.pfEnabled && plan.pf) {
+    savePfRecentCurrent();
+    renderPfRecentRow();
+  }
+
   renderResultsTable(results, pfResults);
   renderSummary(pfResults);
   renderStressTable(pfResults, stressResults);
   populateChartYearSelects();
   renderChart(results, pfResults);
+  renderPlanLineChart(results, pfResults);
   document.getElementById("export-card").hidden = false;
   collapsePlanForm();
 }
@@ -962,101 +1176,65 @@ function syncPFVisibility() {
   document.getElementById("pf-inputs").hidden = !enabled;
 }
 
-// --- PF presets: named, saved bundles of {LTV%, loan rate%, discount%/yr}.
-// Scoped per (plan, span) — presets for BOC 薪火傳承 2yr are irrelevant to
-// BOC 薪火傳承 5yr, so they're kept separate. Only offered for plans that
-// have PF enabled at all (pf-inputs section), since LTV/rate only mean
-// anything there; discount-only plans don't need a named-preset system —
-// their single set of values already round-trips via the normal
-// save/loadState() localStorage persistence.
+// --- PF "recent input": auto-captures the last LTV/rate/stress-rate/discount
+// combo used for this plan/span whenever Calculate runs with PF on, so the
+// advisor can quickly revert to it after tweaking values — no manual
+// save/load/delete step needed. Scoped per (plan, span), one entry each,
+// always overwritten by the most recent calculation.
 function pfPresetKey() {
   return `${state.selectedPlanId}::${state.paymentSpan}`;
 }
 
-function loadAllPfPresets() {
+function loadAllPfRecent() {
   try {
-    return JSON.parse(localStorage.getItem(PF_PRESET_STORAGE_KEY)) || {};
+    return JSON.parse(localStorage.getItem(PF_RECENT_STORAGE_KEY)) || {};
   } catch (e) {
     return {};
   }
 }
 
-function saveAllPfPresets(all) {
-  localStorage.setItem(PF_PRESET_STORAGE_KEY, JSON.stringify(all));
-}
-
-function populatePfPresetSelect() {
-  const select = document.getElementById("pf-preset-select");
-  select.innerHTML = "";
-  const presets = loadAllPfPresets()[pfPresetKey()] || {};
-  const names = Object.keys(presets);
-  if (names.length === 0) {
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.textContent = t("pfPresetNoneOption");
-    select.appendChild(opt);
-    select.disabled = true;
-    return;
-  }
-  select.disabled = false;
-  for (const name of names) {
-    const opt = document.createElement("option");
-    opt.value = name;
-    opt.textContent = name;
-    select.appendChild(opt);
-  }
-}
-
-function savePfPresetCurrent() {
-  const nameInput = document.getElementById("pf-preset-name");
-  const name = nameInput.value.trim();
-  if (!name) return;
-  const all = loadAllPfPresets();
-  const key = pfPresetKey();
-  all[key] = all[key] || {};
-  all[key][name] = {
+function savePfRecentCurrent() {
+  const all = loadAllPfRecent();
+  all[pfPresetKey()] = {
     ltv: document.getElementById("pf-ltv").value,
     rate: document.getElementById("pf-rate").value,
+    stressRate: document.getElementById("pf-stress-rate").value,
     discountPercents: readDiscountOverridePercents().map((r) => r * 100),
   };
-  saveAllPfPresets(all);
-  nameInput.value = "";
-  populatePfPresetSelect();
-  document.getElementById("pf-preset-select").value = name;
+  localStorage.setItem(PF_RECENT_STORAGE_KEY, JSON.stringify(all));
 }
 
-function loadPfPresetSelected() {
-  const select = document.getElementById("pf-preset-select");
-  const name = select.value;
-  if (!name) return;
-  const presets = loadAllPfPresets()[pfPresetKey()] || {};
-  const preset = presets[name];
-  if (!preset) return;
+function renderPfRecentRow() {
+  const row = document.getElementById("pf-recent-row");
+  const recent = loadAllPfRecent()[pfPresetKey()];
+  if (!recent) {
+    row.hidden = true;
+    return;
+  }
+  const parts = [];
+  if (recent.ltv) parts.push(`${t("pfRecentLtvTag")} ${Number(recent.ltv).toFixed(1)}%`);
+  if (recent.rate) parts.push(`${t("pfRecentRateTag")} ${Number(recent.rate).toFixed(2)}%`);
+  if (recent.stressRate) parts.push(`${t("pfRecentStressTag")} ${Number(recent.stressRate).toFixed(1)}%`);
+  document.getElementById("pf-recent-summary").textContent = parts.join(" · ");
+  row.hidden = false;
+}
 
-  document.getElementById("pf-ltv").value = preset.ltv;
-  document.getElementById("pf-rate").value = preset.rate;
-  state.pfLtvPercent = preset.ltv ? Number(preset.ltv) : null;
+function usePfRecent() {
+  const recent = loadAllPfRecent()[pfPresetKey()];
+  if (!recent) return;
+
+  document.getElementById("pf-ltv").value = recent.ltv;
+  document.getElementById("pf-rate").value = recent.rate;
+  document.getElementById("pf-stress-rate").value = recent.stressRate || "";
+  state.pfLtvPercent = recent.ltv ? Number(recent.ltv) : null;
+  state.pfStressRatePercent = recent.stressRate ? Number(recent.stressRate) : null;
 
   const inputs = document.querySelectorAll(".discount-override-input");
-  preset.discountPercents.forEach((pct, i) => {
+  (recent.discountPercents || []).forEach((pct, i) => {
     if (inputs[i]) inputs[i].value = pct.toFixed(2);
   });
 
   if (lastResults) calculate();
-}
-
-function deletePfPresetSelected() {
-  const select = document.getElementById("pf-preset-select");
-  const name = select.value;
-  if (!name) return;
-  const all = loadAllPfPresets();
-  const key = pfPresetKey();
-  if (all[key]) {
-    delete all[key][name];
-    if (Object.keys(all[key]).length === 0) delete all[key];
-  }
-  saveAllPfPresets(all);
-  populatePfPresetSelect();
 }
 
 function loadAdvisorInfo() {
@@ -1087,7 +1265,7 @@ function init() {
   populateSpanSelect();
   populatePFModeSelect();
   populateDiscountOverrideInputs();
-  populatePfPresetSelect();
+  renderPfRecentRow();
   loadAdvisorInfo();
 
   document.getElementById("premium").value = state.grossPremium;
@@ -1095,6 +1273,7 @@ function init() {
   document.getElementById("pf-rate").value = state.pfLoanRatePercent;
   if (state.pfLtvPercent !== null) document.getElementById("pf-ltv").value = state.pfLtvPercent;
   if (state.pfStressRatePercent !== null) document.getElementById("pf-stress-rate").value = state.pfStressRatePercent;
+  if (state.bankRatePercent !== null) document.getElementById("bank-rate").value = state.bankRatePercent;
   syncPFVisibility();
   initStepNav();
   document.getElementById("plan-summary-edit-btn").addEventListener("click", expandPlanForm);
@@ -1109,7 +1288,7 @@ function init() {
     populatePFModeSelect();
     state.discountOverridePercents = null;
     populateDiscountOverrideInputs();
-    populatePfPresetSelect();
+    renderPfRecentRow();
   });
 
   document.getElementById("plan").addEventListener("change", (e) => {
@@ -1119,7 +1298,7 @@ function init() {
     populatePFModeSelect();
     state.discountOverridePercents = null;
     populateDiscountOverrideInputs();
-    populatePfPresetSelect();
+    renderPfRecentRow();
   });
 
   // Span is now a real input independent of plan selection — changing it
@@ -1130,7 +1309,7 @@ function init() {
     populatePFModeSelect();
     state.discountOverridePercents = null;
     populateDiscountOverrideInputs();
-    populatePfPresetSelect();
+    renderPfRecentRow();
   });
 
   document.getElementById("premium").addEventListener("input", updateDefaultLTV);
@@ -1141,9 +1320,7 @@ function init() {
   });
   document.getElementById("pf-enabled").addEventListener("change", syncPFVisibility);
 
-  document.getElementById("pf-preset-save").addEventListener("click", savePfPresetCurrent);
-  document.getElementById("pf-preset-load").addEventListener("click", loadPfPresetSelected);
-  document.getElementById("pf-preset-delete").addEventListener("click", deletePfPresetSelected);
+  document.getElementById("pf-recent-use").addEventListener("click", usePfRecent);
 
   ["chart-year-1", "chart-year-2", "chart-year-3"].forEach((id) => {
     document.getElementById(id).addEventListener("change", () => {
@@ -1160,13 +1337,21 @@ function init() {
   document.getElementById("add-to-comparison-btn").addEventListener("click", addToComparison);
   document.getElementById("export-comparison-pdf-btn").addEventListener("click", exportComparisonPDF);
 
-  ["comparison-year-from", "comparison-year-to"].forEach((id) => {
+  ["comparison-year-1", "comparison-year-2", "comparison-year-3"].forEach((id) => {
     document.getElementById(id).addEventListener("input", () => {
       if (state.comparisonSlots.length > 0) {
         renderComparisonTable();
+        renderComparisonBarChart();
         renderComparisonChart();
       }
     });
+  });
+
+  document.getElementById("bank-rate").addEventListener("input", (e) => {
+    state.bankRatePercent = e.target.value ? Number(e.target.value) : null;
+    saveState();
+    if (lastResults) renderPlanLineChart(lastResults, lastPFResults);
+    if (state.comparisonSlots.length > 0) renderComparisonChart();
   });
 }
 

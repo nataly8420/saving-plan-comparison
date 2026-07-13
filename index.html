@@ -64,6 +64,9 @@
           <select id="span"></select>
           <p id="pf-availability-note" class="pf-availability-note"></p>
 
+          <label for="bank-rate" data-i18n="bankRateLabel">Bank Savings Rate % p.a. (optional, for comparison line)</label>
+          <input id="bank-rate" type="number" inputmode="decimal" min="0" step="0.1" placeholder="e.g. 3.5" />
+
           <details class="disclosure" id="discount-disclosure">
             <summary><span data-i18n="discountOverrideLabel">Discount % per year (editable)</span> — <span class="disclosure-summary-value" id="discount-disclosure-summary"></span></summary>
             <div id="discount-override-inputs" class="discount-override-grid"></div>
@@ -84,25 +87,14 @@
             <label for="pf-rate" data-i18n="pfRateLabel">Loan Interest Rate % p.a.</label>
             <input id="pf-rate" type="number" inputmode="decimal" min="0" step="0.1" value="2.5" class="entered-input" />
 
-            <details class="disclosure">
-              <summary data-i18n="pfAdvancedLabel">Stress test &amp; saved presets</summary>
+            <label for="pf-stress-rate" data-i18n="pfStressLabel">Stress Test Rate % p.a. (optional)</label>
+            <input id="pf-stress-rate" type="number" inputmode="decimal" min="0" step="0.1" placeholder="e.g. 4.5" class="entered-input" />
 
-              <label for="pf-stress-rate" data-i18n="pfStressLabel">Stress Test Rate % p.a. (optional)</label>
-              <input id="pf-stress-rate" type="number" inputmode="decimal" min="0" step="0.1" placeholder="e.g. 4.5" />
-
-              <div class="field-group">
-                <span class="field-group-label" data-i18n="pfPresetLabel">Saved LTV/rate/discount presets</span>
-                <div class="pf-preset-row">
-                  <select id="pf-preset-select"></select>
-                  <button id="pf-preset-load" type="button" data-i18n="pfPresetLoadBtn">Load</button>
-                  <button id="pf-preset-delete" type="button" data-i18n="pfPresetDeleteBtn">Delete</button>
-                </div>
-                <div class="pf-preset-row">
-                  <input id="pf-preset-name" type="text" data-i18n-placeholder="pfPresetNamePlaceholder" placeholder="e.g. Bank A" />
-                  <button id="pf-preset-save" type="button" data-i18n="pfPresetSaveBtn">Save current</button>
-                </div>
-              </div>
-            </details>
+            <div id="pf-recent-row" class="pf-recent-row" hidden>
+              <span class="pf-recent-label" data-i18n="pfRecentLabel">Most recently used:</span>
+              <span id="pf-recent-summary" class="pf-recent-summary"></span>
+              <button id="pf-recent-use" type="button" data-i18n="pfRecentUseBtn">Use</button>
+            </div>
           </div>
 
           <button id="calculate-btn" type="button" data-i18n="calculateBtn">Calculate</button>
@@ -148,6 +140,11 @@
           <canvas id="results-chart"></canvas>
         </div>
         <ul id="chart-caption" class="chart-caption"></ul>
+
+        <div class="chart-container comparison-line-chart-container">
+          <canvas id="results-line-chart"></canvas>
+        </div>
+        <p class="comparison-chart-note" data-i18n="planLineChartNote">Solid segments and filled points are policy years the proposal actually discloses. Dashed segments and hollow points (marked *) are a straight-line estimate for milestone-only proposals — not a figure from the proposal itself.</p>
       </section>
 
       <details class="card" id="results" hidden>
@@ -172,6 +169,7 @@
             <tbody></tbody>
           </table>
         </div>
+        <p id="results-estimated-note" class="estimated-note" hidden></p>
         <p id="plan-disclaimer" class="disclaimer" hidden></p>
       </details>
 
@@ -205,20 +203,29 @@
         <h2 data-i18n="comparisonCardTitle">Compare Plans</h2>
         <p class="field-group-label" data-i18n="comparisonHint">Calculate a plan, then "Add to Comparison" — up to 3 at a time.</p>
 
-        <div class="year-range-picker">
+        <div class="chart-year-picker">
           <div>
-            <label for="comparison-year-from" data-i18n="yearRangeFrom">From year</label>
-            <input id="comparison-year-from" type="number" inputmode="numeric" min="1" step="1" />
+            <label for="comparison-year-1" data-i18n="chartYearA">Year A</label>
+            <input id="comparison-year-1" type="number" inputmode="numeric" min="1" step="1" />
           </div>
           <div>
-            <label for="comparison-year-to" data-i18n="yearRangeTo">To year</label>
-            <input id="comparison-year-to" type="number" inputmode="numeric" min="1" step="1" />
+            <label for="comparison-year-2" data-i18n="chartYearB">Year B</label>
+            <input id="comparison-year-2" type="number" inputmode="numeric" min="1" step="1" />
+          </div>
+          <div>
+            <label for="comparison-year-3" data-i18n="chartYearC">Year C</label>
+            <input id="comparison-year-3" type="number" inputmode="numeric" min="1" step="1" />
           </div>
         </div>
 
         <div class="chart-container">
+          <canvas id="comparison-bar-chart"></canvas>
+        </div>
+
+        <div class="chart-container comparison-line-chart-container">
           <canvas id="comparison-chart"></canvas>
         </div>
+        <p class="comparison-chart-note" data-i18n="comparisonChartNote">Solid segments and filled points are policy years the proposal actually discloses. Dashed segments and hollow points (marked *) are a straight-line estimate between the two nearest disclosed years for proposals that only publish milestone years — not a figure from the proposal itself.</p>
 
         <div class="table-scroll">
           <table id="comparison-table">
@@ -226,7 +233,6 @@
             <tbody></tbody>
           </table>
         </div>
-        <p id="comparison-delta-note" class="comparison-delta-note"></p>
         <button id="export-comparison-pdf-btn" type="button" data-i18n="exportComparisonPdfBtn">Export Comparison PDF</button>
       </section>
     </div>

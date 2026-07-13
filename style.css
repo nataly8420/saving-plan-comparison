@@ -253,10 +253,6 @@ button:disabled {
   cursor: not-allowed;
 }
 
-.comparison-year-col {
-  border-left: 0.5px solid var(--color-border);
-}
-
 .comparison-remove-btn {
   width: auto;
   margin-top: 0;
@@ -270,8 +266,22 @@ button:disabled {
   border: 0.5px solid var(--color-danger-border);
 }
 
+/* Wide tables (esp. the comparison table) can have far more columns than
+   fit on screen. Rather than just clipping silently at the container edge
+   (easy to mistake for missing/lost data), fade in a shadow on whichever
+   side still has more to scroll — no JS needed, this is the classic
+   dual-background-attachment "scroll shadow" trick. */
 .table-scroll {
   overflow-x: auto;
+  background:
+    linear-gradient(to right, var(--color-card) 50%, rgba(0, 0, 0, 0)) 0 0,
+    linear-gradient(to left, var(--color-card) 50%, rgba(0, 0, 0, 0)) 100% 0,
+    linear-gradient(to right, rgba(61, 58, 53, 0.14), rgba(61, 58, 53, 0)) 0 0,
+    linear-gradient(to left, rgba(61, 58, 53, 0.14), rgba(61, 58, 53, 0)) 100% 0;
+  background-repeat: no-repeat;
+  background-color: var(--color-card);
+  background-size: 24px 100%, 24px 100%, 10px 100%, 10px 100%;
+  background-attachment: local, local, scroll, scroll;
 }
 
 table {
@@ -369,22 +379,33 @@ td:first-child {
   border-bottom: 1.5px dotted var(--color-accent-border);
 }
 
-.pf-preset-row {
+.pf-recent-row {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-card-soft);
 }
 
-.pf-preset-row select,
-.pf-preset-row input {
+.pf-recent-label {
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+
+.pf-recent-summary {
   flex: 1;
-  min-height: 40px;
+  font-size: 0.85rem;
+  color: var(--color-text);
 }
 
-.pf-preset-row button {
+.pf-recent-row button {
   width: auto;
   margin-top: 0;
-  padding: 8px 14px;
+  padding: 6px 14px;
   font-size: 0.78rem;
   text-transform: none;
   letter-spacing: normal;
@@ -504,33 +525,8 @@ td:first-child {
   margin-top: 0;
 }
 
-.year-range-picker {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.year-range-picker label {
-  margin-top: 0;
-}
-
-.comparison-best-cell {
-  color: var(--color-accent);
-  font-weight: 600;
-}
-
-.comparison-best-badge {
-  display: inline-block;
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--color-accent);
-  background: #fdf1ec;
-  border-radius: var(--radius-sm);
-  padding: 1px 5px;
-  vertical-align: middle;
+.comparison-line-chart-container {
+  margin-top: 24px;
 }
 
 .comparison-add-note {
@@ -543,14 +539,12 @@ td:first-child {
   padding: 8px 10px;
 }
 
-.comparison-delta-note {
-  margin: 12px 0 0;
-  font-size: 0.8rem;
-  color: var(--color-text-body);
-  background: var(--color-card-soft);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
+.comparison-chart-note {
+  margin: 8px 0 0;
+  font-size: 0.72rem;
+  color: var(--color-muted);
 }
+
 
 .chart-caption {
   list-style: none;
@@ -606,6 +600,31 @@ td:first-child {
   font-size: 0.7rem;
   color: var(--color-muted);
   line-height: 1.5;
+}
+
+.estimated-note {
+  margin: 10px 0 0;
+  font-size: 0.72rem;
+  color: var(--color-muted);
+  font-style: italic;
+}
+
+.estimated-row {
+  color: var(--color-muted);
+}
+
+.estimated-tag {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  background: var(--color-card-soft);
+  border: 0.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  vertical-align: middle;
 }
 
 details.card summary {

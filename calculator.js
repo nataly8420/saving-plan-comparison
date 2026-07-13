@@ -140,6 +140,51 @@ function round4(n) {
 }
 
 /**
+ * Some proposals only disclose milestone policy years (e.g. 1-5, then every
+ * 5th year) rather than a full year-by-year table. Per explicit user
+ * decision, gap years between two disclosed milestones are now filled with
+ * a LINEAR interpolation between the nearest disclosed year below and above
+ * (not extrapolated beyond the last disclosed year — there's no upper bound
+ * to interpolate toward). Every interpolated entry is flagged
+ * `isEstimated: true` so every downstream consumer (results table, charts,
+ * PDF) can render it visibly differently from real, sourced data — this is
+ * a deliberate estimate, not a proposal figure, and must never be
+ * presented as if it were one.
+ *
+ * Linear (not curve-fit) is a deliberate choice: real bonus/terminal-
+ * dividend schedules often step sharply at specific anniversaries (e.g.
+ * terminal dividend jumping 20x in a single year in some real proposals
+ * already in plans.js), so a fancier curve would falsely imply more
+ * precision than a straight line between two known points actually has.
+ * @param {object} returnTable - planConfig.returnTable (sparse or dense)
+ * @returns {object} same shape as returnTable, gaps filled in, every entry
+ *   carrying `isEstimated` (false for real disclosed years, true for filled ones)
+ */
+function expandReturnTableWithEstimates(returnTable) {
+  const years = Object.keys(returnTable).map(Number).sort((a, b) => a - b);
+  const expanded = {};
+  for (let i = 0; i < years.length; i++) {
+    const y = years[i];
+    expanded[y] = { ...returnTable[y], isEstimated: false };
+    if (i === years.length - 1) continue;
+    const yNext = years[i + 1];
+    if (yNext - y <= 1) continue;
+    const r0 = returnTable[y];
+    const r1 = returnTable[yNext];
+    for (let gapYear = y + 1; gapYear < yNext; gapYear++) {
+      const frac = (gapYear - y) / (yNext - y);
+      expanded[gapYear] = {
+        guaranteedCVRatio: r0.guaranteedCVRatio + (r1.guaranteedCVRatio - r0.guaranteedCVRatio) * frac,
+        accumulatedDivRatio: r0.accumulatedDivRatio + (r1.accumulatedDivRatio - r0.accumulatedDivRatio) * frac,
+        terminalDivRatio: r0.terminalDivRatio + (r1.terminalDivRatio - r0.terminalDivRatio) * frac,
+        isEstimated: true,
+      };
+    }
+  }
+  return expanded;
+}
+
+/**
  * Year-by-year returns for a single plan, no premium financing.
  *
  * NOTE: guaranteedCV/accumulatedDiv/terminalDiv ratios in returnTable are
@@ -152,19 +197,20 @@ function round4(n) {
  * @param {number} grossPremiumUSD - total gross premium the client is paying
  * @param {number} paymentSpan - years premium is spread over
  * @param {number[]} [discountOverridePercents] - see applyDiscounts()
- * @returns {Array<{year:number, guaranteedCV:number, accumulatedDiv:number, terminalDiv:number, totalSV:number, irrPercent:number|null}>}
+ * @returns {Array<{year:number, guaranteedCV:number, accumulatedDiv:number, terminalDiv:number, totalSV:number, irrPercent:number|null, isEstimated:boolean}>}
  */
 function calculatePlan(planConfig, grossPremiumUSD, paymentSpan, discountOverridePercents) {
   const netPremiumPerYear = applyDiscounts(grossPremiumUSD, paymentSpan, planConfig, discountOverridePercents);
   const terminalRate = planConfig.terminalDivRealizationRate ?? 1;
 
-  const years = Object.keys(planConfig.returnTable)
+  const expandedTable = expandReturnTableWithEstimates(planConfig.returnTable);
+  const years = Object.keys(expandedTable)
     .map(Number)
     .sort((a, b) => a - b);
 
   const results = [];
   for (const year of years) {
-    const ratios = planConfig.returnTable[year];
+    const ratios = expandedTable[year];
     const guaranteedCV = ratios.guaranteedCVRatio * grossPremiumUSD;
     const accumulatedDiv = ratios.accumulatedDivRatio * grossPremiumUSD;
     const terminalDiv = ratios.terminalDivRatio * grossPremiumUSD * terminalRate;
@@ -190,9 +236,36 @@ function calculatePlan(planConfig, grossPremiumUSD, paymentSpan, discountOverrid
     }
     const irrPercent = calculateIRR(cashFlows);
 
-    results.push({ year, guaranteedCV, accumulatedDiv, terminalDiv, totalSV, irrPercent });
+    results.push({ year, guaranteedCV, accumulatedDiv, terminalDiv, totalSV, irrPercent, isEstimated: ratios.isEstimated });
   }
   return results;
+}
+
+/**
+ * "What if I'd just put this money in a bank instead" reference line — a
+ * pure compound-interest projection using the EXACT SAME cash-flow timing
+ * as the plan's own IRR calculation (net premium for payment-year k
+ * deposited at the start of that year, t = k-1), so it's a fair
+ * apples-to-apples comparison against the plan's own IRR: if the bank rate
+ * entered equals the plan's IRR at some exit year, this line and the
+ * plan's totalSV line cross exactly at that year.
+ * @param {number[]} netPremiumPerYear - output of applyDiscounts()
+ * @param {number} paymentSpan
+ * @param {number} bankRate - decimal, e.g. 0.035 for 3.5%
+ * @param {number[]} years - which policy years to compute a value for
+ * @returns {{[year: number]: number}}
+ */
+function calculateBankLine(netPremiumPerYear, paymentSpan, bankRate, years) {
+  const result = {};
+  for (const year of years) {
+    const paidThrough = Math.min(paymentSpan, year);
+    let value = 0;
+    for (let t = 0; t < paidThrough; t++) {
+      value += netPremiumPerYear[t] * Math.pow(1 + bankRate, year - t);
+    }
+    result[year] = value;
+  }
+  return result;
 }
 
 /**
