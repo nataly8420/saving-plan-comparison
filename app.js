@@ -111,6 +111,25 @@ function currencyLabel(code) {
   return code === "USD" ? t("currencyUSD") : code;
 }
 
+// Chart y-axes were showing full numbers like "13,222,739" — hard to read
+// at a glance and prone to crowding/overlapping each other. Scales ticks
+// down to millions or thousands (based on the chart's own max value) and
+// states the unit in the axis title instead, e.g. "13.2" with a title of
+// "Total Cash Value (USD, millions)".
+function pickValueScale(maxValue) {
+  if (maxValue >= 1000000) return { divisor: 1000000, unitKey: "unitMillions" };
+  if (maxValue >= 1000) return { divisor: 1000, unitKey: "unitThousands" };
+  return { divisor: 1, unitKey: null };
+}
+
+function scaledAxisTitle(currency, unitKey) {
+  return unitKey ? t("chartAxisValue", currencyLabel(currency), t(unitKey)) : t("chartAxisValueNoUnit", currencyLabel(currency));
+}
+
+function scaledTickCallback(divisor) {
+  return (v) => (v / divisor).toLocaleString(undefined, { maximumFractionDigits: divisor === 1 ? 0 : 1 });
+}
+
 function applyTranslations() {
   document.querySelectorAll("[data-i18n]").forEach((el) => {
     el.textContent = t(el.dataset.i18n);
@@ -610,6 +629,12 @@ function renderChart(results, pfResults) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      // Top padding keeps the tallest bar's datalabel from colliding with
+      // the legend sitting right above the chart — without this, a bar
+      // reaching close to the chart's max value gets its label overlapped
+      // by the legend text (very visible once the whole page is scaled
+      // down, e.g. viewing an exported PDF on a phone screen).
+      layout: { padding: { top: 24 } },
       scales: {
         x: {
           stacked: true,
@@ -621,11 +646,14 @@ function renderChart(results, pfResults) {
           ticks: { callback: function (value) { return this.getLabelForValue(value).replace(/\D/g, ""); } },
           title: { display: true, text: t("chartAxisYear") },
         },
-        y: {
-          stacked: true,
-          ticks: { callback: (v) => formatMoney(v) },
-          title: { display: true, text: t("chartAxisValue", currencyLabel(plan.currency)) },
-        },
+        y: (() => {
+          const { divisor, unitKey } = pickValueScale(Math.max(...barTotals));
+          return {
+            stacked: true,
+            ticks: { callback: scaledTickCallback(divisor) },
+            title: { display: true, text: scaledAxisTitle(plan.currency, unitKey) },
+          };
+        })(),
       },
       plugins: {
         tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatMoney(ctx.parsed.y)}` } },
@@ -716,7 +744,7 @@ function renderPlanLineChart(results, pfResults) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      layout: { padding: { right: 64 } },
+      layout: { padding: { top: 24, right: 64 } },
       scales: {
         x: {
           type: "linear",
@@ -725,10 +753,14 @@ function renderPlanLineChart(results, pfResults) {
           ticks: { precision: 0 },
           title: { display: true, text: t("chartAxisYear") },
         },
-        y: {
-          ticks: { callback: (v) => formatMoney(v) },
-          title: { display: true, text: t("chartAxisValue", currencyLabel(plan.currency)) },
-        },
+        y: (() => {
+          const maxVal = Math.max(...datasets.flatMap((d) => d.data.map((p) => p.y)));
+          const { divisor, unitKey } = pickValueScale(maxVal);
+          return {
+            ticks: { callback: scaledTickCallback(divisor) },
+            title: { display: true, text: scaledAxisTitle(plan.currency, unitKey) },
+          };
+        })(),
       },
       plugins: {
         tooltip: {
@@ -971,12 +1003,17 @@ function renderComparisonBarChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      layout: { padding: { top: 24 } },
       scales: {
         x: { title: { display: true, text: t("chartAxisYear") } },
-        y: {
-          ticks: { callback: (v) => formatMoney(v) },
-          title: { display: true, text: t("chartAxisValue", currencyLabel(PLANS[state.comparisonSlots[0].planId].currency)) },
-        },
+        y: (() => {
+          const maxVal = Math.max(...datasets.flatMap((d) => d.data.filter((v) => v !== null)));
+          const { divisor, unitKey } = pickValueScale(maxVal);
+          return {
+            ticks: { callback: scaledTickCallback(divisor) },
+            title: { display: true, text: scaledAxisTitle(PLANS[state.comparisonSlots[0].planId].currency, unitKey) },
+          };
+        })(),
       },
       plugins: {
         tooltip: {
@@ -1017,8 +1054,29 @@ function renderComparisonChart() {
   // which stretches are real vs. estimated: dashed for any segment touching
   // an estimated point, solid otherwise, plus smaller/hollow points on
   // estimated years so they don't read as equally confident data.
+  const slotPoints = state.comparisonSlots.map((slot) =>
+    slot.availableYears.filter((y) => y <= maxYear).map((y) => ({ x: y, y: slot.resultsByYear[y].totalSV, isEstimated: slot.resultsByYear[y].isEstimated }))
+  );
+  // When two lines end at close values, the end-of-line labels overlap.
+  // Rather than hiding one (losing a real number), nudge the labels'
+  // placement angle apart — one tilts up-right, the other down-right —
+  // so both stay visible and readable. Only kicks in when the end values
+  // are genuinely close (within 4% of the chart's overall value range).
+  const lastValues = slotPoints.map((pts) => (pts.length ? pts[pts.length - 1].y : 0));
+  const allValues = slotPoints.flat().map((p) => p.y);
+  const valueRange = allValues.length ? Math.max(...allValues) - Math.min(...allValues) || 1 : 1;
+  const labelAligns = lastValues.map(() => "right");
+  for (let i = 0; i < lastValues.length; i++) {
+    for (let j = i + 1; j < lastValues.length; j++) {
+      if (Math.abs(lastValues[i] - lastValues[j]) / valueRange < 0.04) {
+        labelAligns[i] = 60;
+        labelAligns[j] = 120;
+      }
+    }
+  }
+
   const datasets = state.comparisonSlots.map((slot, i) => {
-    const points = slot.availableYears.filter((y) => y <= maxYear).map((y) => ({ x: y, y: slot.resultsByYear[y].totalSV, isEstimated: slot.resultsByYear[y].isEstimated }));
+    const points = slotPoints[i];
     return {
       label: `${slot.company} ${slot.planName}`,
       data: points,
@@ -1036,38 +1094,37 @@ function renderComparisonChart() {
       fill: false,
       datalabels: {
         color: colors[i % colors.length],
-        display: (ctx) => (ctx.dataIndex === ctx.dataset.data.length - 1 ? "auto" : false),
+        display: (ctx) => ctx.dataIndex === ctx.dataset.data.length - 1,
         formatter: (value) => (value.isEstimated ? `${formatMoney(value.y)}*` : formatMoney(value.y)),
-        align: "right",
+        align: labelAligns[i],
         anchor: "end",
         font: { size: 10, weight: "600" },
       },
     };
   });
 
-  // One "Bank Rate" reference line per slot (not just one for the whole
-  // chart) — different slots can carry different premiums/spans, so a
-  // single universal bank line couldn't fairly represent all of them at
-  // once. All rendered in the same neutral gray/dashed style so they read
-  // as one visual "what if you'd just banked it" band, distinct from the
-  // colored actual-plan lines, while still being per-plan accurate.
-  if (state.bankRatePercent !== null) {
-    state.comparisonSlots.forEach((slot) => {
-      const slotYears = slot.availableYears.filter((y) => y <= maxYear);
-      const bankValues = calculateBankLine(slot.netPremiumPerYear, slot.span, state.bankRatePercent / 100, slotYears);
-      datasets.push({
-        label: t("bankRateLegendFor", state.bankRatePercent, slot.planName),
-        data: slotYears.map((y) => ({ x: y, y: bankValues[y] })),
-        borderColor: "#8a8578",
-        backgroundColor: "#8a8578",
-        borderWidth: 1.5,
-        borderDash: [3, 3],
-        pointRadius: 0,
-        pointHoverRadius: 4,
-        tension: 0,
-        fill: false,
-        datalabels: { display: false },
-      });
+  // A single "Bank Rate" reference line (not one per slot — with similar
+  // premiums across slots, per-slot lines were nearly identical and just
+  // read as a rendering glitch rather than useful detail). Based on the
+  // first added slot's premium/span schedule; the legend label says which
+  // plan that is so it's never misread as applying equally to every plan
+  // if premiums actually differ.
+  if (state.bankRatePercent !== null && state.comparisonSlots.length > 0) {
+    const baseSlot = state.comparisonSlots[0];
+    const baseYears = baseSlot.availableYears.filter((y) => y <= maxYear);
+    const bankValues = calculateBankLine(baseSlot.netPremiumPerYear, baseSlot.span, state.bankRatePercent / 100, baseYears);
+    datasets.push({
+      label: t("bankRateLegendFor", state.bankRatePercent, baseSlot.planName),
+      data: baseYears.map((y) => ({ x: y, y: bankValues[y] })),
+      borderColor: "#8a8578",
+      backgroundColor: "#8a8578",
+      borderWidth: 1.5,
+      borderDash: [3, 3],
+      pointRadius: 0,
+      pointHoverRadius: 4,
+      tension: 0,
+      fill: false,
+      datalabels: { display: false },
     });
   }
 
@@ -1083,7 +1140,7 @@ function renderComparisonChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      layout: { padding: { right: 64 } },
+      layout: { padding: { top: 24, right: 64 } },
       scales: {
         x: {
           type: "linear",
@@ -1092,10 +1149,14 @@ function renderComparisonChart() {
           ticks: { precision: 0 },
           title: { display: true, text: t("chartAxisYear") },
         },
-        y: {
-          ticks: { callback: (v) => formatMoney(v) },
-          title: { display: true, text: t("chartAxisValue", currencyLabel(PLANS[state.comparisonSlots[0].planId].currency)) },
-        },
+        y: (() => {
+          const maxVal = Math.max(...datasets.flatMap((d) => d.data.map((p) => p.y)));
+          const { divisor, unitKey } = pickValueScale(maxVal);
+          return {
+            ticks: { callback: scaledTickCallback(divisor) },
+            title: { display: true, text: scaledAxisTitle(PLANS[state.comparisonSlots[0].planId].currency, unitKey) },
+          };
+        })(),
       },
       plugins: {
         tooltip: {

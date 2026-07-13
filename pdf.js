@@ -17,6 +17,38 @@
 // The chart image still goes through chartInstance.toBase64Image() (higher
 // quality than screenshotting the canvas via html2canvas).
 
+// Chart.js sizes a canvas off its on-screen container's current CSS pixel
+// dimensions. If someone exports a PDF from a narrow phone screen, the live
+// chart itself renders cramped (axis titles clipped, legend/labels
+// crowded) BEFORE it's ever captured — that cramped bitmap then gets baked
+// permanently into the PDF, so even opening the PDF later on a full-size
+// desktop shows the same squeeze. Forcing a fixed, generous size just for
+// the capture (then restoring the real on-screen size right after) makes
+// exported charts consistent regardless of what device triggered the
+// export.
+const CHART_CAPTURE_WIDTH = 900;
+const CHART_CAPTURE_HEIGHT = 400;
+
+async function captureChartFixedSize(chart, width, height) {
+  const canvas = chart.canvas;
+  const prevWidth = canvas.style.width;
+  const prevHeight = canvas.style.height;
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+  chart.resize(width, height);
+  // resize() alone only recalculates layout — it doesn't repaint the canvas
+  // until the next animation frame, so capturing immediately after grabs a
+  // stale (near-blank) bitmap. update("none") forces an immediate, non-
+  // animated repaint at the new size before we capture it.
+  chart.update("none");
+  const imgData = chart.toBase64Image("image/jpeg", 0.92);
+  canvas.style.width = prevWidth;
+  canvas.style.height = prevHeight;
+  chart.resize();
+  chart.update("none");
+  return imgData;
+}
+
 async function exportPDF() {
   if (!lastResults || !chartInstance || !planLineChartInstance) return;
 
@@ -82,17 +114,15 @@ async function exportPDF() {
   y += headerHeight + 16;
 
   // --- Chart image (Chart.js's own export, sharper than a DOM screenshot) ---
-  // Defensive resize: guards against the canvas still reporting 0x0 if this
-  // is called in the same tick as the chart's first render (its container
-  // was hidden at construction time — see renderChart()'s comment).
-  chartInstance.resize();
-  // JPEG, not PNG: jsPDF embeds PNGs without recompressing them, which
-  // balloons the PDF to several MB for a chart-sized image (bad for
+  // Captured at a fixed size (see captureChartFixedSize) so it looks the
+  // same in the PDF whether exported from a desktop or a narrow phone
+  // screen — JPEG, not PNG: jsPDF embeds PNGs without recompressing them,
+  // which balloons the PDF to several MB for a chart-sized image (bad for
   // emailing/WhatsApp-ing to a client) — the identical chart as JPEG comes
   // out roughly 75x smaller with no visible quality loss on a flat-color bar chart.
-  const imgData = chartInstance.toBase64Image("image/jpeg", 0.92);
+  const imgData = await captureChartFixedSize(chartInstance, CHART_CAPTURE_WIDTH, CHART_CAPTURE_HEIGHT);
   const imgWidth = pageWidth - margin * 2;
-  const imgHeight = imgWidth * (chartInstance.height / chartInstance.width);
+  const imgHeight = imgWidth * (CHART_CAPTURE_HEIGHT / CHART_CAPTURE_WIDTH);
   doc.addImage(imgData, "JPEG", margin, y, imgWidth, imgHeight);
   y += imgHeight + 16;
 
@@ -103,10 +133,9 @@ async function exportPDF() {
     doc.addPage();
     y = margin;
   }
-  planLineChartInstance.resize();
-  const lineImgData = planLineChartInstance.toBase64Image("image/jpeg", 0.92);
+  const lineImgData = await captureChartFixedSize(planLineChartInstance, CHART_CAPTURE_WIDTH, CHART_CAPTURE_HEIGHT);
   const lineImgWidth = pageWidth - margin * 2;
-  const lineImgHeight = lineImgWidth * (planLineChartInstance.height / planLineChartInstance.width);
+  const lineImgHeight = lineImgWidth * (CHART_CAPTURE_HEIGHT / CHART_CAPTURE_WIDTH);
   doc.addImage(lineImgData, "JPEG", margin, y, lineImgWidth, lineImgHeight);
 
   const filenameBase = (clientName || plan.name).replace(/[^a-zA-Z0-9一-鿿]+/g, "_");
@@ -130,7 +159,12 @@ async function exportComparisonPDF() {
   if (!state.comparisonSlots || state.comparisonSlots.length === 0 || !comparisonChartInstance || !comparisonBarChartInstance) return;
 
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit: "pt", format: "a4", orientation: "landscape" });
+  // Portrait, not landscape — landscape only made sense when this export
+  // included a wide per-year table (removed per user request). A landscape
+  // A4 page renders unusably cramped when opened on a phone (the common
+  // case for this app — advisors previewing/sending on mobile), since the
+  // page gets scaled down to fit a narrow portrait screen width.
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 32;
@@ -191,10 +225,9 @@ async function exportComparisonPDF() {
     doc.addPage();
     y = margin;
   }
-  comparisonBarChartInstance.resize();
-  const barImgData = comparisonBarChartInstance.toBase64Image("image/jpeg", 0.92);
+  const barImgData = await captureChartFixedSize(comparisonBarChartInstance, CHART_CAPTURE_WIDTH, CHART_CAPTURE_HEIGHT);
   const barImgWidth = pageWidth - margin * 2;
-  const barImgHeight = barImgWidth * (comparisonBarChartInstance.height / comparisonBarChartInstance.width);
+  const barImgHeight = barImgWidth * (CHART_CAPTURE_HEIGHT / CHART_CAPTURE_WIDTH);
   doc.addImage(barImgData, "JPEG", margin, y, barImgWidth, barImgHeight);
   y += barImgHeight + 16;
 
@@ -203,10 +236,9 @@ async function exportComparisonPDF() {
     doc.addPage();
     y = margin;
   }
-  comparisonChartInstance.resize();
-  const lineImgData = comparisonChartInstance.toBase64Image("image/jpeg", 0.92);
+  const lineImgData = await captureChartFixedSize(comparisonChartInstance, CHART_CAPTURE_WIDTH, CHART_CAPTURE_HEIGHT);
   const lineImgWidth = pageWidth - margin * 2;
-  const lineImgHeight = lineImgWidth * (comparisonChartInstance.height / comparisonChartInstance.width);
+  const lineImgHeight = lineImgWidth * (CHART_CAPTURE_HEIGHT / CHART_CAPTURE_WIDTH);
   doc.addImage(lineImgData, "JPEG", margin, y, lineImgWidth, lineImgHeight);
   y += lineImgHeight + 16;
 
