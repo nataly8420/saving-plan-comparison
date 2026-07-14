@@ -684,8 +684,13 @@ let planLineChartInstance = null;
 // bank savings rate to compare against.
 function renderPlanLineChart(results, pfResults) {
   const plan = getCurrentPlan();
-  const rows = pfResults || results;
-  const maxYear = Math.max(...rows.map((r) => r.year));
+  const allRows = pfResults || results;
+  // Capped to the largest of the 3 chosen Year A/B/C values (same as the
+  // bar chart above it) rather than the plan's full disclosed range — a
+  // plan disclosed out to year 88 would otherwise dwarf whatever range the
+  // advisor actually cares about for this client.
+  const maxYear = Math.max(...readChartYears());
+  const rows = allRows.filter((r) => r.year <= maxYear);
 
   const planPoints = rows.map((r) => ({ x: r.year, y: r.totalSV, isEstimated: r.isEstimated }));
   const datasets = [
@@ -1103,18 +1108,19 @@ function renderComparisonChart() {
     };
   });
 
-  // A single "Bank Rate" reference line (not one per slot — with similar
-  // premiums across slots, per-slot lines were nearly identical and just
-  // read as a rendering glitch rather than useful detail). Based on the
-  // first added slot's premium/span schedule; the legend label says which
-  // plan that is so it's never misread as applying equally to every plan
-  // if premiums actually differ.
+  // A single, universal "Bank Rate" reference line — not tied to or
+  // labeled after any one compared plan (not one per slot either — with
+  // similar premiums across slots, per-slot lines were nearly identical
+  // and just read as a rendering glitch). Uses the first added slot's
+  // premium/span schedule as the cash-flow basis for the compounding math
+  // (a bank line needs some deposit schedule to compound), but is
+  // presented as one generic reference line, same as the single-plan chart.
   if (state.bankRatePercent !== null && state.comparisonSlots.length > 0) {
     const baseSlot = state.comparisonSlots[0];
     const baseYears = baseSlot.availableYears.filter((y) => y <= maxYear);
     const bankValues = calculateBankLine(baseSlot.netPremiumPerYear, baseSlot.span, state.bankRatePercent / 100, baseYears);
     datasets.push({
-      label: t("bankRateLegendFor", state.bankRatePercent, baseSlot.planName),
+      label: t("bankRateLegend", state.bankRatePercent),
       data: baseYears.map((y) => ({ x: y, y: bankValues[y] })),
       borderColor: "#8a8578",
       backgroundColor: "#8a8578",

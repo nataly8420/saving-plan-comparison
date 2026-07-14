@@ -22,30 +22,50 @@
 // chart itself renders cramped (axis titles clipped, legend/labels
 // crowded) BEFORE it's ever captured — that cramped bitmap then gets baked
 // permanently into the PDF, so even opening the PDF later on a full-size
-// desktop shows the same squeeze. Forcing a fixed, generous size just for
-// the capture (then restoring the real on-screen size right after) makes
-// exported charts consistent regardless of what device triggered the
-// export.
+// desktop shows the same squeeze.
+//
+// The first fix attempt here resized the LIVE on-screen chart in place
+// (chart.resize(w,h) + chart.update("none")) just for the capture, then put
+// it back. That worked in this session's own testing but produced a solid
+// black rectangle (a JPEG of a fully-transparent, unpainted canvas) on a
+// real phone — resizing a responsive, currently-displayed chart and
+// expecting a synchronous repaint isn't reliable across browsers/devices.
+//
+// This instead builds a completely separate, temporary Chart.js instance on
+// its own offscreen canvas at a fixed size, using the SAME data/options as
+// the live chart (shared by reference, not cloned — chart configs contain
+// functions like datalabel formatters that can't survive JSON cloning
+// anyway) — with animation disabled so it paints synchronously on
+// construction. The live on-screen chart is never touched, so there's no
+// resize/repaint race with it at all.
 const CHART_CAPTURE_WIDTH = 900;
 const CHART_CAPTURE_HEIGHT = 400;
 
-async function captureChartFixedSize(chart, width, height) {
-  const canvas = chart.canvas;
-  const prevWidth = canvas.style.width;
-  const prevHeight = canvas.style.height;
-  canvas.style.width = `${width}px`;
-  canvas.style.height = `${height}px`;
-  chart.resize(width, height);
-  // resize() alone only recalculates layout — it doesn't repaint the canvas
-  // until the next animation frame, so capturing immediately after grabs a
-  // stale (near-blank) bitmap. update("none") forces an immediate, non-
-  // animated repaint at the new size before we capture it.
-  chart.update("none");
-  const imgData = chart.toBase64Image("image/jpeg", 0.92);
-  canvas.style.width = prevWidth;
-  canvas.style.height = prevHeight;
-  chart.resize();
-  chart.update("none");
+function captureChartAsImage(chart, width, height) {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  canvas.style.cssText = `position:absolute;left:-9999px;top:0;width:${width}px;height:${height}px;`;
+  document.body.appendChild(canvas);
+  let imgData;
+  // chart.options (the live instance property) is Chart.js's internal
+  // resolved-options proxy used for scriptable-option lookups — spreading
+  // it produces something Chart.js's own scriptable resolver chokes on
+  // ("t.startsWith is not a function") when fed into a brand-new instance.
+  // chart.config.options is the plain object actually passed in at
+  // construction time, safe to reuse directly.
+  const tempChart = new Chart(canvas.getContext("2d"), {
+    type: chart.config.type,
+    data: chart.data,
+    options: { ...chart.config.options, responsive: false, maintainAspectRatio: false, animation: false },
+    plugins: [ChartDataLabels, chartWhiteBackgroundPlugin],
+  });
+  try {
+    imgData = tempChart.toBase64Image("image/jpeg", 0.92);
+  } finally {
+    tempChart.destroy();
+    document.body.removeChild(canvas);
+  }
   return imgData;
 }
 
@@ -114,13 +134,13 @@ async function exportPDF() {
   y += headerHeight + 16;
 
   // --- Chart image (Chart.js's own export, sharper than a DOM screenshot) ---
-  // Captured at a fixed size (see captureChartFixedSize) so it looks the
-  // same in the PDF whether exported from a desktop or a narrow phone
-  // screen — JPEG, not PNG: jsPDF embeds PNGs without recompressing them,
+  // Captured via a fixed-size offscreen clone (see captureChartAsImage) so
+  // it looks the same in the PDF whether exported from a desktop or a
+  // narrow phone screen — JPEG, not PNG: jsPDF embeds PNGs without recompressing them,
   // which balloons the PDF to several MB for a chart-sized image (bad for
   // emailing/WhatsApp-ing to a client) — the identical chart as JPEG comes
   // out roughly 75x smaller with no visible quality loss on a flat-color bar chart.
-  const imgData = await captureChartFixedSize(chartInstance, CHART_CAPTURE_WIDTH, CHART_CAPTURE_HEIGHT);
+  const imgData = captureChartAsImage(chartInstance, CHART_CAPTURE_WIDTH, CHART_CAPTURE_HEIGHT);
   const imgWidth = pageWidth - margin * 2;
   const imgHeight = imgWidth * (CHART_CAPTURE_HEIGHT / CHART_CAPTURE_WIDTH);
   doc.addImage(imgData, "JPEG", margin, y, imgWidth, imgHeight);
@@ -133,7 +153,7 @@ async function exportPDF() {
     doc.addPage();
     y = margin;
   }
-  const lineImgData = await captureChartFixedSize(planLineChartInstance, CHART_CAPTURE_WIDTH, CHART_CAPTURE_HEIGHT);
+  const lineImgData = captureChartAsImage(planLineChartInstance, CHART_CAPTURE_WIDTH, CHART_CAPTURE_HEIGHT);
   const lineImgWidth = pageWidth - margin * 2;
   const lineImgHeight = lineImgWidth * (CHART_CAPTURE_HEIGHT / CHART_CAPTURE_WIDTH);
   doc.addImage(lineImgData, "JPEG", margin, y, lineImgWidth, lineImgHeight);
@@ -225,7 +245,7 @@ async function exportComparisonPDF() {
     doc.addPage();
     y = margin;
   }
-  const barImgData = await captureChartFixedSize(comparisonBarChartInstance, CHART_CAPTURE_WIDTH, CHART_CAPTURE_HEIGHT);
+  const barImgData = captureChartAsImage(comparisonBarChartInstance, CHART_CAPTURE_WIDTH, CHART_CAPTURE_HEIGHT);
   const barImgWidth = pageWidth - margin * 2;
   const barImgHeight = barImgWidth * (CHART_CAPTURE_HEIGHT / CHART_CAPTURE_WIDTH);
   doc.addImage(barImgData, "JPEG", margin, y, barImgWidth, barImgHeight);
@@ -236,7 +256,7 @@ async function exportComparisonPDF() {
     doc.addPage();
     y = margin;
   }
-  const lineImgData = await captureChartFixedSize(comparisonChartInstance, CHART_CAPTURE_WIDTH, CHART_CAPTURE_HEIGHT);
+  const lineImgData = captureChartAsImage(comparisonChartInstance, CHART_CAPTURE_WIDTH, CHART_CAPTURE_HEIGHT);
   const lineImgWidth = pageWidth - margin * 2;
   const lineImgHeight = lineImgWidth * (CHART_CAPTURE_HEIGHT / CHART_CAPTURE_WIDTH);
   doc.addImage(lineImgData, "JPEG", margin, y, lineImgWidth, lineImgHeight);
