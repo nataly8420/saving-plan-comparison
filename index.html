@@ -64,9 +64,6 @@
           <select id="span"></select>
           <p id="pf-availability-note" class="pf-availability-note"></p>
 
-          <label for="bank-rate" data-i18n="bankRateLabel">Bank Savings Rate % p.a. (optional, for comparison line)</label>
-          <input id="bank-rate" type="number" inputmode="decimal" min="0" step="0.1" placeholder="e.g. 3.5" />
-
           <details class="disclosure" id="discount-disclosure">
             <summary><span data-i18n="discountOverrideLabel">Discount % per year (editable)</span> — <span class="disclosure-summary-value" id="discount-disclosure-summary"></span></summary>
             <div id="discount-override-inputs" class="discount-override-grid"></div>
@@ -100,6 +97,18 @@
           <button id="calculate-btn" type="button" data-i18n="calculateBtn">Calculate</button>
         </section>
       </div>
+
+      <!-- Deliberately outside #plan-form-wrap (which collapses after
+           Calculate, and belongs to whichever single plan is currently
+           selected) — the bank rate is a universal reference line that
+           applies to every linear chart on the page (single-plan and
+           comparison alike), not a setting for one plan, so it needs to
+           stay visible and independent of the plan form's own state. -->
+      <section class="card" id="bank-rate-card">
+        <h2 data-i18n="bankRateCardTitle">Bank Rate Comparison</h2>
+        <label for="bank-rate" data-i18n="bankRateLabel">Bank Savings Rate % p.a. (optional, for comparison line)</label>
+        <input id="bank-rate" type="number" inputmode="decimal" min="0" step="0.1" placeholder="e.g. 3.5" />
+      </section>
     </div>
 
     <div class="zone" id="zone-results">

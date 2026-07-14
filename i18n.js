@@ -43,6 +43,7 @@ const I18N = {
     pfRecentRateTag: "Rate",
     pfRecentStressTag: "Stress",
 
+    bankRateCardTitle: "Bank Rate Comparison",
     bankRateLabel: "Bank Savings Rate % p.a. (optional, for comparison line)",
     bankRateLegend: (rate) => `Bank Rate (${rate}% p.a.)`,
     planLineChartNote: "Solid segments and filled points are policy years the proposal actually discloses. Dashed segments and hollow points (marked *) are a straight-line estimate for milestone-only proposals — not a figure from the proposal itself.",
@@ -168,6 +169,7 @@ const I18N = {
     pfRecentRateTag: "利率",
     pfRecentStressTag: "壓力測試",
 
+    bankRateCardTitle: "銀行利率比較",
     bankRateLabel: "銀行儲蓄利率 %（可選，用於比較線）",
     bankRateLegend: (rate) => `銀行利率（${rate}% 年利率）`,
     planLineChartNote: "實線及實心點為建議書實際披露的保單年度。虛線及空心點（標示 *）為只披露里程碑年度的建議書所作的直線估算 — 並非建議書本身的數值。",
